@@ -1,5 +1,8 @@
 # CLI Specification
 
+This is the upstream Claude contract, exposed here as `cclens-multi claude`.
+The four-agent CLI contract is in [multi-agent.md](multi-agent.md).
+
 The CLI is the user's surface onto the stages (`architecture.md`): `analyze`
 populates the store, the **views** and `sql` read it, and `optimize` hands the
 findings to an interactive `claude` session. This spec defines the command

@@ -225,7 +225,15 @@ enum Command {
 }
 
 pub fn run() -> Result<()> {
-    match Cli::parse().command {
+    run_from(std::env::args_os())
+}
+
+pub fn run_from<I, T>(args: I) -> Result<()>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    match Cli::parse_from(args).command {
         Command::Analyze {
             projects,
             format,

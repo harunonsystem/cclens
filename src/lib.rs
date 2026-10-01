@@ -8,4 +8,5 @@
 pub mod adapter;
 pub mod cli;
 pub mod core;
+pub mod multi;
 pub mod store;

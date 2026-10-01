@@ -1,15 +1,14 @@
 [package]
-name = "cclens"
-# Placeholder. The release workflow rewrites this from the tag of the published
-# GitHub Release before it runs `cargo publish`, so the committed value is never
-# what ships. It stays at 0.0.0 rather than a plausible number precisely so
-# nobody reads it as the current version — the tags are the record.
-version = "0.0.0"
+name = "cclens-multi"
+publish = false
+autobins = false
+# Local version; registry publication is disabled.
+version = "0.1.0"
 edition = "2024"
-description = "A lens onto your Claude Code usage: where time, tokens, and effort go, and which config to fix"
-repository = "https://github.com/lambdalisue/cclens"
+description = "Local usage and diagnostic analysis for Claude Code, Codex, OpenCode and pi"
+repository = "https://github.com/harunonsystem/cclens-multi"
 license = "MIT"
-readme = "README.md"
+readme = "README.local.md"
 keywords = ["claude", "claude-code", "usage", "analytics", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 # The crate is the Rust program. Everything that only serves someone working in
@@ -29,6 +28,13 @@ exclude = [
   "justfile",
   "rust-toolchain.toml",
 ]
+
+[lib]
+name = "cclens"
+
+[[bin]]
+name = "cclens-multi"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"

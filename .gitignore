@@ -22,3 +22,17 @@
 
 # OS / editor noise
 .DS_Store
+
+# Private input, configuration and derived exports
+/logs
+/exports
+*.log
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+auth.json
+credentials.json
+.env
+.env.*
+!.env.example

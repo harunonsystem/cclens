@@ -1,5 +1,9 @@
 # cclens
 
+> This private repository ships `cclens-multi` for Claude Code, Codex, OpenCode and pi.
+> See [README.local.md](README.local.md) for installation and usage.
+> The upstream README is preserved below.
+
 A lens onto your Claude Code usage. `cclens` reads your session transcripts and
 live configuration, extracts them into a local SQLite store, and shows **where
 time, tokens, and effort are being wasted — and how to fix it**: unused or heavy

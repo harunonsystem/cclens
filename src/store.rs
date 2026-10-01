@@ -305,6 +305,10 @@ fn ensure_owner_only(path: &std::path::Path) -> Result<()> {
 }
 
 impl Store {
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
     /// Open (creating if needed) a store at `path`, ensuring the schema exists.
     /// The directory is created too: the default store lives under the user
     /// state directory, which need not exist yet, and SQLite will not create it.
