@@ -236,6 +236,17 @@ pub fn parse(text: &str, path: &str) -> Batch {
     if let Some(parent) = header.as_ref().and_then(|v| common::string(&v["parentId"])) {
         session.parent_id = Some(parent);
     }
+    // Short IDs are not agent-wide identities. Copied fork prefixes retain timestamps.
+    for event in &mut batch.events {
+        event.id = format!(
+            "{}:{}",
+            event.id,
+            event
+                .timestamp_ms
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| event.session_id.clone())
+        );
+    }
     batch.sessions.push(session);
     batch
 }

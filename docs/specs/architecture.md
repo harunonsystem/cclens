@@ -1,5 +1,9 @@
 # Architecture Specification
 
+This document owns the shared layer boundaries and the upstream Claude analysis.
+The local multi-runtime commands follow those boundaries; their normalization,
+coverage and privacy contracts are specified in [multi-agent.md](multi-agent.md).
+
 cclens answers one question about a Claude Code setup: **where can the
 configuration be optimized, and how?** It does that by measuring, from real
 usage, the **cost** and **actual use** of every configuration surface — skills,

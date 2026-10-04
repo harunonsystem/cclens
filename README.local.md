@@ -49,7 +49,9 @@ DB は `${XDG_STATE_HOME:-~/.local/state}/cclens-multi/analysis.db`。`--db /abs
 - Codex の旧累積カウンタは差分化し、重複スナップショットを除く。応答単位ログがある区間はそちらを優先する。旧区間の応答同一性は推定のため `estimated_usage_events` に入る。初期累積値の前史が不明な場合は直近応答だけを数え、警告する。
 - 失敗の発生はログの error/終了コードを根拠にし、失敗カテゴリ、編集反復による修正ループ、指示・修正・継続・質問の分類は推定。編集反復だけでは作業の失敗を断定しない。`examples` → `get` で元の JSONL 行番号または SQLite の table/row ID を辿れる。
 - `reported_api_equivalent_usd` はログに記録された API 換算額。モデル料金表から新しく計算しない。`actual_payment_usd` は常に `null`。定額契約の実際の支払額や OpenCode の provider 固有の単位と同一視しない。
-- 設定・skill の存在と Markdown の概算トークン量を収集する。Claude の既存 parser を再利用し、他の Agent は一般的な設定位置を対象にする。外部 plugin の全設定や実際のロード状態は網羅しない。Claude 以外の設定 JSON/TOML はファイルのメタデータだけを読む。skill の明示呼び出し・読み取りは区別し、トレースがなければ `null` / `unavailable`。取得できない使用回数をゼロや未使用と扱わない。
+- 設定・skill の存在と Markdown の概算トークン量を収集する。`static_tokens` は定義全体、`startup_tokens` は起動時、`on_demand_tokens` は必要時に読む本文の概算。Claude は既存 parser の `load_mode` を保持し、他の Agent のロード方式・起動時コストは推測せず `null` にする。外部 plugin の全設定や実際のロード状態は網羅しない。Claude 以外の設定 JSON/TOML はファイルのメタデータだけを読む。skill の明示呼び出し・読み取りは区別し、トレースがなければ `null` / `unavailable`。取得できない使用回数をゼロや未使用と扱わない。
+
+変更確認はJSONLを固定サイズのバッファでハッシュし、OpenCodeは読み取りトランザクション内で生の行をハッシュする。サイズ・更新時刻だけでスキップせず、同サイズの書き換えやWAL内の更新も検出する。usage・failures・promptsはSQLiteから逐次集計する。`--limit` は表示件数だけを制限し、総数や合計の計算対象は減らさない。編集バーストの検出は引き続き対象の編集履歴をメモリに保持する。
 
 未対応のイベント・壊れた行・欠損カウンタは `sources --json` と stderr に出る。保存形式の全バージョン互換は保証せず、解析可能な根拠の範囲を出力する。pi の補助ログなど session header のない JSONL も取得範囲の警告になる。
 

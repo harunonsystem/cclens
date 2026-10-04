@@ -5,8 +5,10 @@ remain intact. CLI execution never creates repositories, publishes data, or
 edits agent configuration. Repository setup is separate from analysis.
 `claude` forwards to the original read-only reports.
 
-Agent adapters normalize inputs into sessions and evidence-bearing events.
-Common aggregation reuses upstream failure, prompt, and edit-burst classifiers.
+Agent adapters normalize inputs into sessions and evidence-bearing events,
+including runtime-specific identity rules. The CLI does not interpret event IDs.
+Common aggregation and catalog/trace joins are pure transforms in
+`multi::analysis`; they reuse upstream failure, prompt, and edit-burst classifiers.
 The same private SQLite file holds both `multi_*` and original Claude tables.
 
 Token input includes cache reads and cache writes. Those cache counters and
@@ -21,6 +23,12 @@ Short pi IDs alone do not identify independent sessions. Copied fork histories a
 across an agent, not just within a file. Codex cumulative baselines in fork
 prefixes do not represent new usage. Sources are replaced transactionally on
 refresh; unchanged files may be skipped only under the same adapter version.
+JSONL change detection hashes bytes with bounded buffering rather than retaining
+the whole file; changed files are then read and their content fingerprint is
+recomputed before replacement. OpenCode hashes the raw session/message/part rows
+inside the same read transaction used for extraction, before parsing JSON or
+classifying events. Neither check relies on file size or modification time, so
+same-size rewrites and committed WAL changes remain visible.
 Malformed lines, missing counters, inaccessible sources and unrecognized
 records are reported as coverage gaps. A missing source is not zero usage.
 
@@ -37,6 +45,12 @@ and emit one JSON object. Date boundaries use UTC, with inclusive since and
 exclusive until. `analyze --dry-run` does not create a DB; `--frozen` opens it
 read-only. CLI validation precedes writes. Exit codes are 0 for success with
 explicit coverage gaps, 1 for runtime/input errors, and 2 for invalid arguments.
+Usage, failure and prompt reports stream filtered normalized events from SQLite
+into per-group accumulators, retaining only counters and at most three evidence
+examples per group. All sections of a report share one read snapshot, including
+doctor's separate per-kind queries. Usage sums remain checked unsigned sums with per-counter
+coverage; overflowing sums are NULL. Edit-burst detection still needs the matching
+edit timeline. Row limits bound output, not the events needed for exact totals.
 
 Input JSONL files and the OpenCode database are opened read-only. Stored multi_* facts
 contain counters, classifications and source references, never prompt bodies,
@@ -46,8 +60,16 @@ references use one-based JSONL lines or SQLite table and row IDs.
 
 User classifications, error categories and edit bursts are heuristics. An edit
 burst identifies repeated edits, not a proven unsuccessful repair. Catalogued
-configuration is not evidence that the agent loaded it. Skill reads and explicit
-invocations are reported separately; lack of traces is never called unused.
+configuration is not evidence that the agent loaded it. Inventory separates
+whole-definition `static_tokens`, estimated `startup_tokens`, and
+`on_demand_tokens`, with `load_mode` and `startup_measurement`. Claude catalog
+entries preserve the existing adapter's cost and load-mode semantics. Other
+runtimes' load modes and startup/on-demand costs remain NULL until their loading
+contracts are known; file presence or size is not evidence of startup cost.
+Skill reads and explicit invocations are reported separately; lack of traces
+is never called unused. Global entries are shadowed by a same-agent, same-kind,
+same-ID project entry for traces from that project, so one trace does not count
+against both entries.
 
 Acceptance checks cover four-agent synthetic input through CLI output,
 incremental retry, cumulative resets, copied forks, missing fields, malformed

@@ -1,6 +1,7 @@
 //! Multi-agent domain model and shared analysis. Raw formats stay in adapters.
 use serde::{Deserialize, Serialize};
 
+pub mod analysis;
 pub mod cli;
 pub mod store;
 

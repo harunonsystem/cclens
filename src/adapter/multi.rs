@@ -59,6 +59,39 @@ pub fn event(
     }
 }
 
+/// Finalize normalized identity and project-relative edit paths before storage.
+pub fn normalize(batch: &mut Batch) {
+    for event in &mut batch.events {
+        // A multi-file patch produces distinct edit events under one source ID.
+        event.id = format!(
+            "{}:{}{}",
+            event.kind,
+            event.id,
+            event
+                .target
+                .as_ref()
+                .map(|s| format!(":{}", fingerprint(s)))
+                .unwrap_or_default()
+        );
+        if event.kind == "edit"
+            && let Some(target) = &event.target
+            && !std::path::Path::new(target).is_absolute()
+            && let Some(project) = batch
+                .sessions
+                .iter()
+                .find(|s| s.id == event.session_id)
+                .and_then(|s| s.project.as_deref())
+        {
+            event.target = Some(
+                std::path::Path::new(project)
+                    .join(target)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+}
+
 pub fn text(value: &Value) -> String {
     if let Some(s) = value.as_str() {
         return s.into();
@@ -132,6 +165,25 @@ pub fn fingerprint(text: &str) -> String {
     format!("{:016x}", h.finish())
 }
 
+pub fn fingerprint_reader(mut reader: impl std::io::Read) -> std::io::Result<String> {
+    use std::hash::Hasher;
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if count == 0 {
+            break;
+        }
+        hash.write(&buffer[..count]);
+    }
+    // Match str::hash's terminating marker, preserving existing JSONL fingerprints.
+    hash.write_u8(0xff);
+    Ok(format!("{:016x}", hash.finish()))
+}
+
 pub fn nonzero_exit(line: &str) -> bool {
     [
         "Process exited with code ",
@@ -147,4 +199,27 @@ pub fn nonzero_exit(line: &str) -> bool {
             .and_then(|s| s.parse::<i64>().ok())
             .is_some_and(|code| code != 0)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn streaming_fingerprint_matches_text_and_detects_same_size_rewrites() {
+        let text = format!("{}tail", "合成データ\n".repeat(10000));
+        assert_eq!(
+            fingerprint_reader(text.as_bytes()).unwrap(),
+            fingerprint(&text)
+        );
+        let changed = text.replace("tail", "edit");
+        assert_ne!(
+            fingerprint_reader(changed.as_bytes()).unwrap(),
+            fingerprint(&text)
+        );
+        assert_eq!(
+            fingerprint_reader(std::io::empty()).unwrap(),
+            fingerprint("")
+        );
+    }
 }
