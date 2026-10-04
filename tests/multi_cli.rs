@@ -17,6 +17,64 @@ fn cli(root: &std::path::Path, args: &[&str]) -> Output {
 }
 
 #[test]
+fn inventory_preserves_startup_and_body_costs_without_guessing_other_runtimes() {
+    let root = std::env::temp_dir().join(format!(
+        "cclens-inventory-cost-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let content = "---\ndescription: abcd\n---\nsynthetic private body";
+    for agent in ["claude", "codex"] {
+        let dir = root.join(format!(".{agent}"));
+        fs::create_dir_all(dir.join("skills/review")).unwrap();
+        fs::write(dir.join("skills/review/SKILL.md"), content).unwrap();
+    }
+    fs::create_dir_all(root.join(".claude/projects")).unwrap();
+    fs::write(root.join(".claude/projects/session.jsonl"),
+        r#"{"type":"assistant","uuid":"synthetic","sessionId":"synthetic-session","message":{"id":"synthetic-message","usage":{"input_tokens":1,"output_tokens":1}}}"#
+    ).unwrap();
+    fs::create_dir_all(root.join(".codex/sessions")).unwrap();
+    fs::write(
+        root.join(".codex/sessions/session.jsonl"),
+        r#"{"type":"session_meta","payload":{"id":"synthetic-codex"}}"#,
+    )
+    .unwrap();
+    let home = root.to_string_lossy();
+    let refreshed = cli(&root, &["inventory", "--home", &home, "--json"]);
+    assert!(
+        refreshed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&refreshed.stderr)
+    );
+    let frozen = cli(&root, &["inventory", "--frozen", "--json"]);
+    assert!(frozen.status.success());
+    let report: Value = serde_json::from_slice(&frozen.stdout).unwrap();
+    let rows = report["rows"].as_array().unwrap();
+    let claude = rows
+        .iter()
+        .find(|r| r["agent"] == "claude" && r["id"] == "review")
+        .unwrap();
+    assert_eq!(claude["startup_tokens"], 1);
+    assert_eq!(claude["static_tokens"], 12);
+    assert_eq!(claude["load_mode"], "startup_description");
+    assert_eq!(claude["startup_measurement"], "estimated");
+    assert_eq!(claude["on_demand_tokens"], 12);
+    let codex = rows
+        .iter()
+        .find(|r| r["agent"] == "codex" && r["id"] == "review")
+        .unwrap();
+    for field in ["startup_tokens", "on_demand_tokens", "load_mode"] {
+        assert!(codex.get(field).unwrap().is_null());
+    }
+    assert_eq!(codex["startup_measurement"], "unavailable");
+    assert!(!report.to_string().contains("synthetic private body"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn four_agent_cli_is_idempotent_and_keeps_missing_counters_unknown() {
     let root = std::env::temp_dir().join(format!(
         "cclens-multi-test-{}-{}",
@@ -151,6 +209,12 @@ fn four_agent_cli_is_idempotent_and_keeps_missing_counters_unknown() {
             .any(|r| r["agent"] == "pi" && r["usage_events"] == 3 && r["known_output_events"] == 2)
     );
     assert!(rows.iter().all(|r| r["actual_payment_usd"].is_null()));
+    let limited = cli(&root, &["usage", "--frozen", "--limit", "1", "--json"]);
+    assert!(limited.status.success());
+    let limited: Value = serde_json::from_slice(&limited.stdout).unwrap();
+    assert_eq!(limited["total_rows"], 4);
+    assert_eq!(limited["truncated"], true);
+    assert_eq!(limited["rows"], json!([rows[0]]));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -222,6 +286,21 @@ fn copied_rollouts_diagnostics_and_closed_stdin_errors_are_safe() {
         serde_json::from_slice(&cli(&root, &["prompts", "--frozen", "--json"]).stdout).unwrap();
     assert_eq!(prompts["rows"][0]["classification"], "steer");
     assert_eq!(prompts["rows"][0]["count"], 1);
+    let doctor = cli(&root, &["doctor", "--frozen", "--json"]);
+    assert!(
+        doctor.status.success(),
+        "{}",
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+    let doctor: Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    for (kind, report) in [
+        ("usage", &usage),
+        ("failures", &fail),
+        ("stuck", &stuck),
+        ("prompts", &prompts),
+    ] {
+        assert_eq!(doctor[kind]["rows"], report["rows"]);
+    }
     let bytes = fs::read(root.join("analysis.db")).unwrap();
     for secret in ["PROMPT_SECRET", "SOURCE_SECRET", "SECRET_COMMAND"] {
         assert!(!String::from_utf8_lossy(&bytes).contains(secret));

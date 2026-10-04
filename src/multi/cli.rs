@@ -1,14 +1,14 @@
 //! Non-interactive CLI composition; reports operate only on the normalized store.
-use super::{Event, store as db};
+use super::{
+    analysis::{self, failures, prompts, stuck, usage},
+    store as db,
+};
 use crate::{adapter, store::Store};
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum Agent {
@@ -124,6 +124,17 @@ enum Period {
     Week,
     Month,
     Year,
+}
+
+impl From<Period> for analysis::Period {
+    fn from(period: Period) -> Self {
+        match period {
+            Period::Day => Self::Day,
+            Period::Week => Self::Week,
+            Period::Month => Self::Month,
+            Period::Year => Self::Year,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -246,42 +257,43 @@ pub fn run() -> Result<()> {
         since,
         until,
     };
-    let sources = db::sources(store.connection(), filter.agent)?;
+    let snapshot = store.connection().unchecked_transaction()?;
+    let sources = db::sources(&snapshot, filter.agent)?;
     let mut value = match cli.command {
-        Command::Usage { by } => {
-            usage(&db::events(store.connection(), &filter, Some("usage"))?, by)
+        Command::Usage { by } => db::with_events(&snapshot, &filter, Some("usage"), |events| {
+            usage(events, by.map(Into::into))
+        })?,
+        Command::Failures { min_count } => {
+            db::with_events(&snapshot, &filter, Some("failure"), |events| {
+                failures(events, min_count)
+            })?
         }
-        Command::Failures { min_count } => failures(
-            &db::events(store.connection(), &filter, Some("failure"))?,
-            min_count,
-        ),
         Command::Stuck {
             min_edits,
             gap_seconds,
         } => stuck(
-            &db::events(store.connection(), &filter, Some("edit"))?,
+            &db::events(&snapshot, &filter, Some("edit"))?,
             gap_seconds,
             min_edits,
         ),
-        Command::Prompts => prompts(&db::events(store.connection(), &filter, Some("prompt"))?),
+        Command::Prompts => {
+            db::with_events(&snapshot, &filter, Some("prompt"), |events| prompts(events))?
+        }
         Command::Inventory => inventory(&store, &filter)?,
-        Command::Sources => json!({"rows":db::source_details(store.connection(),filter.agent)?}),
+        Command::Sources => json!({"rows":db::source_details(&snapshot,filter.agent)?}),
         Command::Doctor => {
-            let all = db::events(store.connection(), &filter, None)?;
-            let kinds = |k: &str| {
-                all.iter()
-                    .filter(|(_, _, e)| e.kind == k)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-            json!({"usage":usage(&kinds("usage"),None),"failures":failures(&kinds("failure"),2),"stuck":stuck(&kinds("edit"),300,3),"prompts":prompts(&kinds("prompt"))})
+            json!({
+                "usage":db::with_events(&snapshot, &filter, Some("usage"), |events| usage(events, None))?,
+                "failures":db::with_events(&snapshot, &filter, Some("failure"), |events| failures(events, 2))?,
+                "stuck":stuck(&db::events(&snapshot, &filter, Some("edit"))?,300,3),
+                "prompts":db::with_events(&snapshot, &filter, Some("prompt"), |events| prompts(events))?
+            })
         }
         Command::Get { id } => {
             if filter.agent.is_none() {
                 bail!("get requires --agent claude|codex|opencode|pi");
             }
-            let Some((a, p, e)) = db::event_by_id(store.connection(), filter.agent.unwrap(), &id)?
-            else {
+            let Some((a, p, e)) = db::event_by_id(&snapshot, filter.agent.unwrap(), &id)? else {
                 bail!("event ID not found; obtain id from failures/stuck/prompts --json");
             };
             json!({"agent":a,"project":p,"event":e})
@@ -296,6 +308,7 @@ pub fn run() -> Result<()> {
         "Error categories, user intent, and repair-loop diagnoses are estimates.",
         "API-equivalent cost is not actual payment. Historical sources may no longer exist."
     ]);
+    snapshot.commit()?;
     emit(&value, cli.json)
 }
 
@@ -566,11 +579,27 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
             let source = path.display().to_string();
             available += 1;
             let (fingerprint, mut batch) = if agent == "opencode" {
-                let batch = adapter::opencode::read(&path)?;
-                let fp = adapter::multi::fingerprint(&serde_json::to_string(&batch)?);
-                (fp, batch)
+                let Some(result) = adapter::opencode::read_if_changed(&path, |fp| {
+                    db::unchanged(conn, agent, &source, fp)
+                })?
+                else {
+                    skipped += 1;
+                    continue;
+                };
+                result
             } else {
-                let text = std::fs::read_to_string(&path)
+                use std::io::{Read, Seek};
+                let mut file = std::fs::File::open(&path)
+                    .with_context(|| format!("open {agent} source {}", path.display()))?;
+                let fp = adapter::multi::fingerprint_reader(&mut file)
+                    .with_context(|| format!("hash {agent} source {}", path.display()))?;
+                if db::unchanged(conn, agent, &source, &fp)? {
+                    skipped += 1;
+                    continue;
+                }
+                file.rewind()?;
+                let mut text = String::new();
+                file.read_to_string(&mut text)
                     .with_context(|| format!("read {agent} source {}", path.display()))?;
                 let fp = adapter::multi::fingerprint(&text);
                 if db::unchanged(conn, agent, &source, &fp)? {
@@ -588,40 +617,7 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
                 skipped += 1;
                 continue;
             }
-            for e in &mut batch.events {
-                // pi uses short random entry ids; timestamp disambiguates independent sessions
-                // while retaining the identity of copied branch prefixes.
-                if agent == "pi" {
-                    e.id = format!(
-                        "{}:{}",
-                        e.id,
-                        e.timestamp_ms
-                            .map(|t| t.to_string())
-                            .unwrap_or_else(|| e.session_id.clone())
-                    );
-                }
-                // Include event kind and target so a multi-file patch remains several edits.
-                e.id = format!(
-                    "{}:{}{}",
-                    e.kind,
-                    e.id,
-                    e.target
-                        .as_ref()
-                        .map(|s| format!(":{}", adapter::multi::fingerprint(s)))
-                        .unwrap_or_default()
-                );
-                if e.kind == "edit"
-                    && let Some(target) = &e.target
-                    && !Path::new(target).is_absolute()
-                    && let Some(project) = batch
-                        .sessions
-                        .iter()
-                        .find(|s| s.id == e.session_id)
-                        .and_then(|s| s.project.as_deref())
-                {
-                    e.target = Some(Path::new(project).join(target).display().to_string());
-                }
-            }
+            adapter::multi::normalize(&mut batch);
             if !batch.warnings.is_empty() {
                 eprintln!(
                     "{agent}: {} source warning(s) in {}",
@@ -649,130 +645,10 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
     )
 }
 
-type Rows = [(String, Option<String>, Event)];
-type UsageKey = (String, Option<String>, Option<String>, Option<String>);
-type PromptKey = (String, Option<String>, Option<String>);
-
-fn usage(events: &Rows, period: Option<Period>) -> Value {
-    let mut groups: BTreeMap<UsageKey, Vec<&Event>> = BTreeMap::new();
-    for (a, p, e) in events {
-        let bucket = period.and_then(|period| {
-            e.timestamp_ms
-                .and_then(chrono::DateTime::from_timestamp_millis)
-                .map(|d| match period {
-                    Period::Day => d.format("%Y-%m-%d").to_string(),
-                    Period::Week => d.format("%G-W%V").to_string(),
-                    Period::Month => d.format("%Y-%m").to_string(),
-                    Period::Year => d.format("%Y").to_string(),
-                })
-        });
-        groups
-            .entry((a.clone(), p.clone(), e.model.clone(), bucket))
-            .or_default()
-            .push(e);
-    }
-    let rows:Vec<_>=groups.into_iter().map(|((a,p,m,b),events)|{
-        let sum=|pick:fn(&Event)->Option<u64>| {let values:Vec<_>=events.iter().filter_map(|e|pick(e)).collect();
-            (if values.is_empty(){None}else{values.iter().try_fold(0_u64,|sum,v|sum.checked_add(*v))},values.len())};
-        let (i,ki)=sum(|e|e.tokens.input);let(o,ko)=sum(|e|e.tokens.output);let(r,kr)=sum(|e|e.tokens.cache_read);
-        let(w,kw)=sum(|e|e.tokens.cache_write);let(t,kt)=sum(|e|e.tokens.total);let(reason,k_reason)=sum(|e|e.tokens.reasoning);
-        let costs:Vec<_>=events.iter().filter_map(|e|e.api_cost_usd).collect();
-        json!({"agent":a,"project":p,"model":m,"bucket":b,"usage_events":events.len(),
-            "input_tokens":i,"output_tokens":o,"cache_read_tokens":r,"cache_write_tokens":w,"reasoning_tokens":reason,"total_tokens":t,
-            "known_input_events":ki,"known_output_events":ko,"known_cache_read_events":kr,"known_cache_write_events":kw,"known_reasoning_events":k_reason,"known_total_events":kt,
-            "reported_api_equivalent_usd":if costs.is_empty(){None}else{Some(costs.iter().sum::<f64>())},"known_cost_events":costs.len(),"actual_payment_usd":null,
-            "measurement":if events.iter().all(|e|e.measurement=="unavailable"){"unavailable"}else if events.iter().any(|e|e.measurement=="estimated"){"estimated"}else{"measured"},
-             "estimated_usage_events":events.iter().filter(|e|e.measurement=="estimated").count(),"unavailable_usage_events":events.iter().filter(|e|e.measurement=="unavailable").count(),"cost_measurement":if costs.is_empty(){"unavailable"}else{"estimated"},"cost_source":"logged_api_equivalent","payment_measurement":"unavailable","unknown_timestamp_events":events.iter().filter(|e|e.timestamp_ms.is_none()).count()})
-    }).collect();
-    json!({"rows":rows,"timezone":"UTC","input_includes_cache":true,"reasoning_is_output_subset":true})
-}
-
-fn evidence(a: &str, e: &Event) -> Value {
-    json!({"agent":a,"id":e.id,"session_id":e.session_id,"timestamp_ms":e.timestamp_ms,"source":e.evidence})
-}
-fn failures(events: &Rows, min: u32) -> Value {
-    let mut groups: BTreeMap<UsageKey, Vec<&Event>> = BTreeMap::new();
-    for (a, p, e) in events {
-        groups
-            .entry((a.clone(), p.clone(), e.tool.clone(), e.category.clone()))
-            .or_default()
-            .push(e);
-    }
-    let mut rows:Vec<_>=groups.into_iter().filter(|(_,es)|es.len()>=min as usize).map(|((a,p,t,c),es)|json!({"agent":a,"project":p,"tool":t,"category":c,
-        "count":es.len(),"failure_measurement":"measured","category_measurement":"estimated","examples":es.iter().take(3).map(|e|evidence(&a,e)).collect::<Vec<_>>()})).collect();
-    rows.sort_by_key(|r| std::cmp::Reverse(r["count"].as_u64().unwrap_or(0)));
-    json!({"rows":rows})
-}
-fn stuck(events: &Rows, gap: u32, min: u32) -> Value {
-    let edits: Vec<_> = events
-        .iter()
-        .filter_map(|(a, p, e)| {
-            Some(crate::core::thrash::FileEdit {
-                session_id: format!("{a}:{}", e.session_id),
-                project: p.clone().unwrap_or_default(),
-                path: e.target.clone()?,
-                epoch: e.timestamp_ms? / 1000,
-            })
-        })
-        .collect();
-    let rows:Vec<_>=crate::core::thrash::detect_thrash(&edits,gap as i64,min).iter().map(|ep|{
-        let (a,s)=ep.session_id.split_once(':').unwrap();
-        let examples:Vec<_>=events.iter().filter(|(agent,_,e)|agent==a&&e.session_id==s&&e.target.as_deref()==Some(&ep.path)&&e.timestamp_ms.is_some_and(|t|t/1000>=ep.start_epoch&&t/1000<=ep.end_epoch)).take(3).map(|(_,_,e)|evidence(a,e)).collect();
-        json!({"agent":a,"session_id":s,"project":if ep.project.is_empty(){None}else{Some(&ep.project)},"path":ep.path,"edits":ep.edits,
-            "start_epoch":ep.start_epoch,"end_epoch":ep.end_epoch,"measurement":"estimated","examples":examples})
-    }).collect();
-    json!({"rows":rows,"unknown_timestamp_edits":events.iter().filter(|(_,_,e)|e.timestamp_ms.is_none()).count(),"gap_seconds":gap,"min_edits":min})
-}
-fn prompts(events: &Rows) -> Value {
-    let mut groups: BTreeMap<PromptKey, Vec<&Event>> = BTreeMap::new();
-    for (a, p, e) in events {
-        groups
-            .entry((a.clone(), p.clone(), e.category.clone()))
-            .or_default()
-            .push(e);
-    }
-    let rows:Vec<_>=groups.into_iter().map(|((a,p,c),es)|json!({"agent":a,"project":p,"classification":c,"count":es.len(),"measurement":"estimated",
-        "examples":es.iter().take(3).map(|e|evidence(&a,e)).collect::<Vec<_>>()})).collect();
-    json!({"rows":rows})
-}
 fn inventory(store: &Store, filter: &db::Filter<'_>) -> Result<Value> {
     let traces = db::events(store.connection(), filter, Some("skill"))?;
-    let mut rows = db::inventory(store.connection(), filter.agent)?;
-    rows.retain(|r| {
-        filter
-            .project
-            .is_none_or(|p| r["project"].as_str() == Some(p))
-    });
-    for row in &mut rows {
-        let matches: Vec<_> = traces
-            .iter()
-            .filter(|(a, project, e)| {
-                row["agent"] == *a
-                    && e.target.as_deref() == row["id"].as_str()
-                    && (row["project"].is_null() || row["project"].as_str() == project.as_deref())
-            })
-            .collect();
-        let invocations = matches
-            .iter()
-            .filter(|(_, _, e)| e.category.as_deref() != Some("read"))
-            .count();
-        let reads = matches
-            .iter()
-            .filter(|(_, _, e)| e.category.as_deref() == Some("read"))
-            .count();
-        row["observed_invocations"] = json!((invocations > 0).then_some(invocations));
-        row["observed_reads"] = json!((reads > 0).then_some(reads));
-        row["usage_status"] = json!(if matches.is_empty() {
-            "unavailable"
-        } else {
-            "observed_trace"
-        });
-        row["uses"] = Value::Null;
-        row["loaded"] = Value::Null;
-    }
-    Ok(
-        json!({"rows":rows,"observed_skill_traces":traces.len(),"note":"Observed trace counts are lower bounds. Installed or read does not prove loaded; absent traces do not prove unused."}),
-    )
+    let rows = db::inventory(store.connection(), filter.agent)?;
+    Ok(analysis::inventory(rows, &traces, filter.project))
 }
 fn limit_rows(value: &mut Value, limit: usize) {
     if let Some(rows) = value.get_mut("rows").and_then(Value::as_array_mut) {

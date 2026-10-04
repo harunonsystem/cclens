@@ -8,12 +8,20 @@ use serde_json::Value;
 use super::multi;
 use crate::multi::{Batch, Event, Session, Tokens};
 
-pub fn read(path: &Path) -> Result<Batch> {
+pub fn read_if_changed(
+    path: &Path,
+    unchanged: impl FnOnce(&str) -> Result<bool>,
+) -> Result<Option<(String, Batch)>> {
     let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("open OpenCode database {}", path.display()))?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Deferred)
         .context("start OpenCode read snapshot")?;
+    let fingerprint = snapshot_fingerprint(&tx)?;
+    if unchanged(&fingerprint)? {
+        tx.commit().context("finish unchanged OpenCode snapshot")?;
+        return Ok(None);
+    }
     let mut batch = Batch::default();
 
     {
@@ -290,7 +298,36 @@ pub fn read(path: &Path) -> Result<Batch> {
         batch.events.push(e);
     }
     tx.commit().context("finish OpenCode read snapshot")?;
-    Ok(batch)
+    Ok(Some((fingerprint, batch)))
+}
+
+fn snapshot_fingerprint(conn: &Connection) -> Result<String> {
+    use rusqlite::types::ValueRef;
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    for sql in [
+        "SELECT id, directory, parent_id, time_created FROM session ORDER BY time_created, id",
+        "SELECT id, session_id, data FROM message ORDER BY rowid",
+        "SELECT id, message_id, session_id, data FROM part ORDER BY rowid",
+    ] {
+        sql.hash(&mut hash);
+        let mut stmt = conn.prepare(sql)?;
+        let columns = stmt.column_count();
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            for i in 0..columns {
+                let value = row.get_ref(i)?;
+                std::mem::discriminant(&value).hash(&mut hash);
+                match value {
+                    ValueRef::Null => {}
+                    ValueRef::Integer(v) => v.hash(&mut hash),
+                    ValueRef::Real(v) => v.to_bits().hash(&mut hash),
+                    ValueRef::Text(v) | ValueRef::Blob(v) => v.hash(&mut hash),
+                }
+            }
+        }
+    }
+    Ok(format!("{:016x}", hash.finish()))
 }
 
 fn parse_tokens(v: &Value) -> Tokens {
@@ -385,6 +422,33 @@ mod tests {
     use rusqlite::params;
 
     #[test]
+    fn unchanged_database_is_skipped_before_json_extraction() {
+        let dir = std::env::temp_dir().join(format!("cclens-opencode-skip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("input.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+            CREATE TABLE session(id TEXT, directory TEXT, parent_id TEXT, time_created INTEGER); CREATE TABLE message(id TEXT, session_id TEXT, data TEXT); CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, data TEXT);
+            INSERT INTO message VALUES('synthetic', 'session', 'invalid JSON');").unwrap();
+        assert!(read_if_changed(&path, |_| Ok(true)).unwrap().is_none());
+        let (fingerprint, batch) = read_if_changed(&path, |_| Ok(false)).unwrap().unwrap();
+        assert_eq!(batch.warnings.len(), 1);
+        assert!(
+            read_if_changed(&path, |current| Ok(current == fingerprint))
+                .unwrap()
+                .is_none()
+        );
+        conn.execute("UPDATE message SET data='changed JSON'", [])
+            .unwrap();
+        assert!(
+            read_if_changed(&path, |current| Ok(current == fingerprint))
+                .unwrap()
+                .is_some()
+        );
+        drop(conn);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn reads_synthetic_database_without_mutating_it() {
         let db = std::env::temp_dir().join(format!(
             "cclens-opencode-{}-{}.sqlite",
@@ -428,7 +492,7 @@ mod tests {
         conn.execute("INSERT INTO part VALUES(?1,?2,?3,?4)", params!["e", "m", "s", r#"{"type":"tool","tool":"edit","state":{"status":"completed","input":{"file_path":"a.rs"}}}"#]).unwrap();
         drop(conn);
         let before = std::fs::metadata(&db).unwrap().len();
-        let batch = read(&db).unwrap();
+        let (_, batch) = read_if_changed(&db, |_| Ok(false)).unwrap().unwrap();
         assert_eq!(batch.sessions.len(), 3);
         assert_eq!(batch.events.iter().filter(|e| e.kind == "usage").count(), 2);
         let usage = batch.events.iter().find(|e| e.kind == "usage").unwrap();

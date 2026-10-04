@@ -21,6 +21,10 @@ The adapter reads config into one `surface` per configurable thing, each with:
   cost, and which slice of the text each cost covers;
 - its scope (global vs project) and `config_path`.
 
+The multi-runtime inventory preserves these Claude costs instead of flattening
+them to definition size. For other runtimes, unknown loading semantics remain
+NULL, not an assumed startup saving (see [multi-agent.md](multi-agent.md)).
+
 The catalog is the denominator of every optimization question: you cannot call a
 surface "unused" without knowing it was installed in the first place. A surface
 exercised in a transcript but absent from the catalog (e.g. a skill that was

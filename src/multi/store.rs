@@ -1,10 +1,10 @@
 //! Shared normalized SQLite storage, including source-level atomic replacement.
-use super::{Batch, Event};
+use super::{Batch, Event, analysis::Row};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-pub const VERSION: &str = "multi-3";
+pub const VERSION: &str = "multi-4";
 
 pub fn initialize(conn: &Connection) -> Result<()> {
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
@@ -123,6 +123,15 @@ pub fn events(
     filter: &Filter<'_>,
     kind: Option<&str>,
 ) -> Result<Vec<(String, Option<String>, Event)>> {
+    with_events(conn, filter, kind, |events| events.collect())
+}
+
+pub fn with_events<T>(
+    conn: &Connection,
+    filter: &Filter<'_>,
+    kind: Option<&str>,
+    report: impl FnOnce(&mut dyn Iterator<Item = Result<Row>>) -> Result<T>,
+) -> Result<T> {
     let mut stmt = conn.prepare(
         "SELECT agent,project,payload FROM multi_events
         WHERE (?1 IS NULL OR agent=?1) AND (?2 IS NULL OR project=?2)
@@ -147,11 +156,11 @@ pub fn events(
             ))
         },
     )?;
-    rows.map(|r| {
+    let mut events = rows.map(|r| {
         let (a, p, e) = r?;
         Ok((a, p, serde_json::from_str(&e)?))
-    })
-    .collect()
+    });
+    report(&mut events)
 }
 
 pub fn sources(conn: &Connection, agent: Option<&str>) -> Result<Vec<Value>> {

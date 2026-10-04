@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::{
     adapter::config as claude,
-    core::surface::{Scope, Surface},
+    core::surface::{Scope, Surface, on_demand_tokens},
 };
 
 fn config_root(home: &Path, variable: &str, fallback: &str) -> PathBuf {
@@ -201,6 +201,10 @@ fn surface_row(agent: &str, surface: Surface) -> Value {
         "agent": agent, "id": surface.id, "kind": surface.kind,
         "scope": scope, "project": project, "path": surface.config_path,
         "static_tokens": surface.static_tokens, "measurement": "estimated",
+        "startup_tokens": surface.startup_tokens,
+        "on_demand_tokens": on_demand_tokens(surface.load_mode, surface.static_tokens),
+        "load_mode": surface.load_mode.label(),
+        "startup_measurement": if surface.startup_tokens.is_some() { "estimated" } else { "unavailable" },
         "usage_status": "unavailable", "uses": null, "loaded": null,
     })
 }
@@ -223,6 +227,8 @@ fn metadata_row(
         "scope": if project.is_some() { "project" } else { "global" },
         "project": project, "path": path.display().to_string(),
         "static_tokens": null, "measurement": "measured", "size_bytes": metadata.len(),
+        "startup_tokens": null, "on_demand_tokens": null, "load_mode": null,
+        "startup_measurement": "unavailable",
         "usage_status": "unavailable", "uses": null, "loaded": null,
     }));
     Ok(())
@@ -244,6 +250,8 @@ fn add_instruction(
         "agent": agent, "id": "AGENTS.md", "kind": "claude_md", "scope": scope,
         "project": project, "path": path.display().to_string(),
         "static_tokens": claude::approx_tokens(&content), "measurement": "estimated",
+        "startup_tokens": null, "on_demand_tokens": null, "load_mode": null,
+        "startup_measurement": "unavailable",
         "usage_status": "unavailable", "uses": null, "loaded": null,
     }));
     Ok(())
@@ -322,6 +330,8 @@ fn add_skill_file(
         "agent": agent, "id": id, "kind": "skill", "scope": scope,
         "project": project, "path": path.display().to_string(),
         "static_tokens": claude::approx_tokens(&content), "measurement": "estimated",
+        "startup_tokens": null, "on_demand_tokens": null, "load_mode": null,
+        "startup_measurement": "unavailable",
         "usage_status": "unavailable", "uses": null, "loaded": null,
     }));
     Ok(())
