@@ -75,3 +75,14 @@ Acceptance checks cover four-agent synthetic input through CLI output,
 incremental retry, cumulative resets, copied forks, missing fields, malformed
 tail recovery, source safety, upstream Claude tests, and real local input.
 Commands must terminate with closed stdin and work outside the checkout.
+
+OMP is reported separately from pi using the shared session JSONL family, with
+`--omp` overriding `~/.omp/agent/sessions`. Older stored roots without OMP remain
+readable and acquire the default root on refresh. OMP reasoningTokens is an
+output subset; developer context and credential/title/service metadata is never stored as content.
+Known observation-pack ledger records are auxiliary, not session events: report
+how many were excluded in source warnings, without calling them unknown session
+records or counting their originalTokens as model usage. Unrecognized ledger
+shapes still report unknown records. OpenCode's total counter is optional when
+the component counters permit a derived total; malformed explicit counters
+remain coverage warnings. Refresh invalidates previous adapter-version caches.

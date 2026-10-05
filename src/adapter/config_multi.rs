@@ -136,25 +136,25 @@ pub fn read(agent: &str, home: &Path, projects: &[String]) -> Result<Vec<Value>>
                 )?;
             }
         }
-        "pi" => {
-            let root = home.join(".pi");
+        "pi" | "omp" => {
+            let root = home.join(format!(".{agent}"));
             metadata_row(
                 &mut rows,
-                "pi",
+                agent,
                 "settings.json",
                 &root.join("agent/settings.json"),
                 None,
             )?;
             add_instruction(
                 &mut rows,
-                "pi",
+                agent,
                 &root.join("agent/AGENTS.md"),
                 "global",
                 None,
             )?;
             add_skills(
                 &mut rows,
-                "pi",
+                agent,
                 &[root.join("agent/skills")],
                 "global",
                 None,
@@ -166,22 +166,22 @@ pub fn read(agent: &str, home: &Path, projects: &[String]) -> Result<Vec<Value>>
                 }
                 metadata_row(
                     &mut rows,
-                    "pi",
+                    agent,
                     "settings.json",
-                    &root.join(".pi/settings.json"),
+                    &root.join(format!(".{agent}/settings.json")),
                     Some(project),
                 )?;
                 add_instruction(
                     &mut rows,
-                    "pi",
+                    agent,
                     &root.join("AGENTS.md"),
                     "project",
                     Some(project),
                 )?;
                 add_skills(
                     &mut rows,
-                    "pi",
-                    &[root.join(".pi/skills")],
+                    agent,
+                    &[root.join(format!(".{agent}/skills"))],
                     "project",
                     Some(project),
                 )?;

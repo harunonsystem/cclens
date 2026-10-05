@@ -22,6 +22,25 @@ pub fn parse(text: &str, path: &str) -> Batch {
         .iter()
         .find(|(_, v)| v["type"] == "session")
         .map(|(_, v)| v.clone());
+    if header.is_none()
+        && std::path::Path::new(path).ends_with("observation-pack/ledger.jsonl")
+        && !records.is_empty()
+        && records.iter().all(|(_, record)| {
+            record.get("type").is_none()
+                && matches!(
+                    record["event"].as_str(),
+                    Some("full" | "placeholder" | "recall")
+                )
+                && record["id"].is_string()
+                && record["timestamp"].is_string()
+        })
+    {
+        batch.warnings.push(format!(
+            "{} auxiliary observation records excluded from session usage",
+            records.len()
+        ));
+        return batch;
+    }
     let session_id = header
         .as_ref()
         .and_then(|v| common::string(&v["id"]))
@@ -54,7 +73,14 @@ pub fn parse(text: &str, path: &str) -> Batch {
                 | "session_info"
                 | "context_edit"
                 | "branch_summary"
-                | "label",
+                | "label"
+                | "title"
+                | "title_change"
+                | "credential_pin"
+                | "session_init"
+                | "mode_change"
+                | "service_tier_change"
+                | "ttsr_injection",
             ) => {}
             Some("compaction") => {
                 let Some(id) = common::string(&record["id"]) else {
@@ -130,7 +156,9 @@ pub fn parse(text: &str, path: &str) -> Batch {
                             output: usage["output"].as_u64(),
                             cache_read,
                             cache_write,
-                            reasoning: usage["reasoning"].as_u64(),
+                            reasoning: usage["reasoning"]
+                                .as_u64()
+                                .or_else(|| usage["reasoningTokens"].as_u64()),
                             total: usage["totalTokens"].as_u64(),
                         };
                         event.api_cost_usd = cost;
@@ -226,7 +254,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
                             batch.events.push(event);
                         }
                     }
-                } else if !matches!(role, "system" | "bashExecution") {
+                } else if !matches!(role, "system" | "developer" | "bashExecution") {
                     batch.unknown_records += 1;
                 }
             }
@@ -267,6 +295,30 @@ mod tests {
     }
     fn rec(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn auxiliary_ledger_is_identified_without_claiming_session_usage() {
+        let batch = parse(
+            r#"{"event":"full","id":"obs-a","timestamp":"2026-01-01T00:00:00Z","originalTokens":9}
+{"event":"placeholder","id":"obs-b","timestamp":"2026-01-01T00:00:01Z","originalTokens":10}
+{"event":"recall","id":"obs-a","timestamp":"2026-01-01T00:00:02Z","bytes":12}"#,
+            "/tmp/example/observation-pack/ledger.jsonl",
+        );
+        assert!(batch.sessions.is_empty());
+        assert!(batch.events.is_empty());
+        assert_eq!(batch.unknown_records, 0);
+        assert!(
+            batch
+                .warnings
+                .iter()
+                .any(|w| w.contains("3 auxiliary observation records"))
+        );
+        let unknown = parse(
+            r#"{"event":"new-unknown","id":"obs-c"}"#,
+            "/tmp/example/observation-pack/ledger.jsonl",
+        );
+        assert_eq!(unknown.unknown_records, 1);
     }
 
     #[test]

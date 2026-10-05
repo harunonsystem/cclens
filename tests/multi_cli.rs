@@ -360,3 +360,52 @@ fn copied_rollouts_diagnostics_and_closed_stdin_errors_are_safe() {
     assert_eq!(retained["rows"][0]["output_tokens"], 5);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn omp_usage_is_separate_idempotent_and_keeps_reasoning_and_credentials_safe() {
+    let root = std::env::temp_dir().join(format!(
+        "cclens-omp-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let sessions = root.join(".omp/agent/sessions");
+    fs::create_dir_all(&sessions).unwrap();
+    fs::write(sessions.join("session.jsonl"), [
+        json!({"type":"session","id":"omp-synthetic","cwd":"/tmp/example","version":3}),
+        json!({"type":"credential_pin","id":"pin","credential":"synthetic-secret"}),
+        json!({"type":"title_change","id":"title","title":"synthetic"}),
+        json!({"type":"message","id":"developer-context","message":{"role":"developer","content":"synthetic developer context"}}),
+        json!({"type":"message","id":"usage","timestamp":"2026-01-01T00:00:00Z","message":{"role":"assistant","model":"synthetic-model","usage":{"input":10,"cacheRead":3,"cacheWrite":2,"output":7,"reasoningTokens":4,"totalTokens":22}}})
+    ].iter().map(Value::to_string).collect::<Vec<_>>().join("\n")).unwrap();
+    let before = fs::read(sessions.join("session.jsonl")).unwrap();
+    let home = root.to_string_lossy();
+    for _ in 0..2 {
+        let result = cli(
+            &root,
+            &["usage", "--home", &home, "--agent", "omp", "--json"],
+        );
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let data: Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(data["rows"].as_array().unwrap().len(), 1);
+        let row = &data["rows"][0];
+        assert_eq!(row["agent"], "omp");
+        assert_eq!(row["usage_events"], 1);
+        assert_eq!(row["input_tokens"], 15);
+        assert_eq!(row["output_tokens"], 7);
+        assert_eq!(row["reasoning_tokens"], 4);
+        assert_eq!(data["sources"][0]["unknown_records"], 0);
+    }
+    assert_eq!(before, fs::read(sessions.join("session.jsonl")).unwrap());
+    assert!(
+        !String::from_utf8_lossy(&fs::read(root.join("analysis.db")).unwrap())
+            .contains("synthetic-secret")
+    );
+    fs::remove_dir_all(root).unwrap();
+}

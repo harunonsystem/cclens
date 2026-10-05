@@ -1,6 +1,6 @@
 # cclens-multi
 
-Claude Code・Codex・OpenCode・pi のローカルログを共通 SQLite に集計する Rust CLI。コマンド名は `cclens-multi` で、既存の `cclens` と共存する。
+Claude Code・Codex・OpenCode・pi・OMP のローカルログを共通 SQLite に集計する Rust CLI。コマンド名は `cclens-multi` で、既存の `cclens` と共存する。
 
 本家 [lambdalisue/cclens](https://github.com/lambdalisue/cclens) の Git 履歴と [MIT LICENSE](LICENSE) を保持したローカル拡張。基点は `3df5f76eb14a53c4cb03d975fd4dbd4eb2f7cc70`。本家の説明は [README.md](README.md)、拡張の契約は [multi-agent spec](docs/specs/multi-agent.md) にある。
 
@@ -80,3 +80,5 @@ cargo build --release --locked
 管理先は [harunonsystem/cclens-multi](https://github.com/harunonsystem/cclens-multi) の private repo。既定ブランチは `multi-agent`。この PC の checkout は `~/sandbox/cclens-multi`、`origin` は管理先、`upstream` は本家を指す。
 
 本家の CI・release workflow は履歴とともに保持しているが、この private repo の GitHub Actions は無効にしている。導入と検証には上記の Cargo コマンドを使う。crates.io・Homebrew への公開は行わない。
+
+OMP は `--agent omp` で個別集計し、既定は `~/.omp/agent/sessions`（`--omp PATH` で変更）を読みます。SoL-Pi の既知の補助ledgerは除外件数をsource警告に残し、モデル利用量へ加算しません。
