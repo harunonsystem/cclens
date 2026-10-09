@@ -179,7 +179,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     && v["metadata"]["client_authored"] != false
                 {
                     let content = common::text(&p["content"]);
-                    if content.is_empty() {
+                    if content.is_empty() || is_injected(&content) {
                         continue;
                     }
                     let key = common::string(&p["id"])
@@ -237,6 +237,21 @@ pub fn parse(text: &str, path: &str) -> Batch {
         }
     }
     batch
+}
+
+/// Codex writes harness-injected context as `role: user` items without any
+/// marker, so the prefix is the only tell. These carry no user intent.
+fn is_injected(content: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "# AGENTS.md instructions for",
+        "<environment_context>",
+        "<recommended_plugins>",
+        "<turn_aborted>",
+        "<subagent_notification>",
+        "<external_codex_apps_open_page>",
+    ];
+    let head = content.trim_start();
+    PREFIXES.iter().any(|p| head.starts_with(p))
 }
 
 fn tokens(v: &Value) -> Tokens {
@@ -300,6 +315,27 @@ mod tests {
                 .iter()
                 .any(|e| e.kind == "usage" && e.measurement == "estimated")
         );
+    }
+
+    #[test]
+    fn harness_injected_user_messages_are_not_prompts() {
+        let records = [
+            serde_json::json!({"type":"session_meta","payload":{"id":"s","cwd":"/work"}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /work\n\n<INSTRUCTIONS>\nnope\n</INSTRUCTIONS>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/work</cwd>\n</environment_context>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<recommended_plugins>\n</recommended_plugins>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<turn_aborted>\n</turn_aborted>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"いや、戻して?"}]}}),
+        ];
+        let text = records
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let batch = parse(&text, "synthetic");
+        let prompts: Vec<_> = batch.events.iter().filter(|e| e.kind == "prompt").collect();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].category.as_deref(), Some("correct"));
     }
 
     #[test]

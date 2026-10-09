@@ -58,6 +58,11 @@ command bodies, configuration bodies or authentication material. The upstream
 Claude tables retain their existing bounded error excerpts. Evidence
 references use one-based JSONL lines or SQLite table and row IDs.
 
+Codex writes harness-injected context (`AGENTS.md` instructions, environment
+context, plugin recommendations, abort and subagent notices) as user-role items
+with no marker; the adapter drops them by prefix so they never count as user
+prompts (see `is_injected` in `src/adapter/codex.rs`).
+
 User classifications, error categories and edit bursts are heuristics. An edit
 burst identifies repeated edits, not a proven unsuccessful repair. Catalogued
 configuration is not evidence that the agent loaded it. Inventory separates
