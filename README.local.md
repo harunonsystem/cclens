@@ -1,6 +1,6 @@
 # cclens-multi
 
-Claude Code・Codex・OpenCode・pi のローカルログを共通 SQLite に集計する Rust CLI。コマンド名は `cclens-multi` で、既存の `cclens` と共存する。
+Claude Code・Codex・OpenCode・pi・OMP のローカルログを共通 SQLite に集計する Rust CLI。コマンド名は `cclens-multi` で、既存の `cclens` と共存する。
 
 本家 [lambdalisue/cclens](https://github.com/lambdalisue/cclens) の Git 履歴と [MIT LICENSE](LICENSE) を保持したローカル拡張。基点は `3df5f76eb14a53c4cb03d975fd4dbd4eb2f7cc70`。本家の説明は [README.md](README.md)、拡張の契約は [multi-agent spec](docs/specs/multi-agent.md) にある。
 
@@ -38,6 +38,7 @@ cclens-multi get '<example.id>' --agent codex --frozen --json
 | Codex | `~/.codex/sessions/` | `--codex PATH`、`CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db` | `--opencode PATH`、`XDG_DATA_HOME` |
 | pi | `~/.pi/agent/sessions/` | `--pi PATH` |
+| OMP | `~/.omp/agent/sessions/` | `--omp PATH` |
 
 `--home PATH` は別の home 配下を使う。明示指定した入力ルートは DB に記録され、次の増分実行で再利用する。入力フラグはディレクトリに加えて単一 JSONL も受け付ける。OpenCode は SQLite とその WAL を読み取り専用のトランザクションで読む。
 
@@ -53,7 +54,7 @@ DB は `${XDG_STATE_HOME:-~/.local/state}/cclens-multi/analysis.db`。`--db /abs
 
 変更確認はJSONLを固定サイズのバッファでハッシュし、OpenCodeは読み取りトランザクション内で生の行をハッシュする。サイズ・更新時刻だけでスキップせず、同サイズの書き換えやWAL内の更新も検出する。usage・failures・promptsはSQLiteから逐次集計する。`--limit` は表示件数だけを制限し、総数や合計の計算対象は減らさない。編集バーストの検出は引き続き対象の編集履歴をメモリに保持する。
 
-未対応のイベント・壊れた行・欠損カウンタは `sources --json` と stderr に出る。保存形式の全バージョン互換は保証せず、解析可能な根拠の範囲を出力する。pi の補助ログなど session header のない JSONL も取得範囲の警告になる。
+未対応のイベント・壊れた行・欠損カウンタは `sources --json` と stderr に出る。保存形式の全バージョン互換は保証せず、解析可能な根拠の範囲を出力する。pi / OMP の既知の observation-pack 補助ledgerは除外件数をsource警告に残し、モデル利用量へ加算しない。未認識の補助ログは引き続き取得範囲の欠損として報告する。
 
 ## 本家の Claude 分析
 

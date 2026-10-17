@@ -6,7 +6,8 @@ edits agent configuration. Repository setup is separate from analysis.
 `claude` forwards to the original read-only reports.
 
 Agent adapters normalize inputs into sessions and evidence-bearing events,
-including runtime-specific identity rules. The CLI does not interpret event IDs.
+including runtime-specific identity rules applied once by each adapter. The CLI
+does not interpret event IDs.
 Common aggregation and catalog/trace joins are pure transforms in
 `multi::analysis`; they reuse upstream failure, prompt, and edit-burst classifiers.
 The same private SQLite file holds both `multi_*` and original Claude tables.
@@ -76,7 +77,18 @@ is never called unused. Global entries are shadowed by a same-agent, same-kind,
 same-ID project entry for traces from that project, so one trace does not count
 against both entries.
 
-Acceptance checks cover four-agent synthetic input through CLI output,
+Acceptance checks cover five-agent synthetic input through CLI output,
 incremental retry, cumulative resets, copied forks, missing fields, malformed
 tail recovery, source safety, upstream Claude tests, and real local input.
 Commands must terminate with closed stdin and work outside the checkout.
+
+OMP is reported separately from pi using the shared session JSONL family, with
+`--omp` overriding `~/.omp/agent/sessions`. Older stored roots without OMP remain
+readable and acquire the default root on refresh. OMP reasoningTokens is an
+output subset; developer context and credential/title/service metadata is never stored as content.
+Known observation-pack ledger records are auxiliary, not session events: report
+how many were excluded in source warnings, without calling them unknown session
+records or counting their originalTokens as model usage. Unrecognized ledger
+shapes still report unknown records. OpenCode's total counter is optional when
+the component counters permit a derived total; malformed explicit counters
+remain coverage warnings. Refresh invalidates previous adapter-version caches.

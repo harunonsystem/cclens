@@ -5,7 +5,7 @@ autobins = false
 # Local version; registry publication is disabled.
 version = "0.1.0"
 edition = "2024"
-description = "Local usage and diagnostic analysis for Claude Code, Codex, OpenCode and pi"
+description = "Local usage and diagnostic analysis for Claude Code, Codex, OpenCode, pi and OMP"
 repository = "https://github.com/harunonsystem/cclens-multi"
 license = "MIT"
 readme = "README.local.md"

@@ -16,6 +16,7 @@ enum Agent {
     Codex,
     Opencode,
     Pi,
+    Omp,
 }
 impl Agent {
     fn label(self) -> &'static str {
@@ -24,6 +25,7 @@ impl Agent {
             Self::Codex => "codex",
             Self::Opencode => "opencode",
             Self::Pi => "pi",
+            Self::Omp => "omp",
         }
     }
 }
@@ -32,7 +34,7 @@ impl Agent {
 #[command(
     name = "cclens-multi",
     version,
-    about = "Local, read-only analysis of Claude Code, Codex, OpenCode and pi logs."
+    about = "Local, read-only analysis of Claude Code, Codex, OpenCode, pi and OMP logs."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -81,11 +83,14 @@ struct Cli {
     /// pi JSONL root, read-only.
     #[arg(long, global = true)]
     pi: Option<PathBuf>,
+    /// OMP session JSONL root, read-only.
+    #[arg(long, global = true)]
+    omp: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Refresh the four agent adapters and configuration catalog.
+    /// Refresh the five agent adapters and configuration catalog.
     Analyze,
     /// Token totals by agent, project, model and optional UTC time bucket.
     Usage {
@@ -144,14 +149,17 @@ struct Roots {
     codex: PathBuf,
     opencode: PathBuf,
     pi: PathBuf,
+    #[serde(default)]
+    omp: PathBuf,
 }
 impl Roots {
-    fn sources(&self) -> [(&str, &Path); 4] {
+    fn sources(&self) -> [(&str, &Path); 5] {
         [
             ("claude", &self.claude),
             ("codex", &self.codex),
             ("opencode", &self.opencode),
             ("pi", &self.pi),
+            ("omp", &self.omp),
         ]
     }
 }
@@ -166,7 +174,7 @@ pub fn run() -> Result<()> {
         return emit(
             &json!({"schema_version":1,"binary":"cclens-multi","first_command":"cclens-multi doctor --json",
             "commands":["analyze","usage","failures","stuck","prompts","inventory","sources","doctor","get","agent-context","claude <upstream command>"],
-            "agents":["claude","codex","opencode","pi"],"filters":["--agent","--project","--model","--since","--until","--limit"],
+            "agents":["claude","codex","opencode","pi","omp"],"filters":["--agent","--project","--model","--since","--until","--limit"],
             "stdout":"data only","stderr":"diagnostics","exit_codes":{"0":"success, including reported coverage gaps","1":"runtime or source error","2":"invalid CLI arguments"},
             "privacy":"inputs read-only; only derived local DB is written; no authentication or network needed",
             "unknown":"NULL values and per-counter known-event counts; never treat gaps as zero",
@@ -190,7 +198,7 @@ pub fn run() -> Result<()> {
         Cli::command()
             .error(
                 clap::error::ErrorKind::MissingRequiredArgument,
-                "get requires --agent claude|codex|opencode|pi",
+                "get requires --agent claude|codex|opencode|pi|omp",
             )
             .exit();
     }
@@ -291,7 +299,7 @@ pub fn run() -> Result<()> {
         }
         Command::Get { id } => {
             if filter.agent.is_none() {
-                bail!("get requires --agent claude|codex|opencode|pi");
+                bail!("get requires --agent claude|codex|opencode|pi|omp");
             }
             let Some((a, p, e)) = db::event_by_id(&snapshot, filter.agent.unwrap(), &id)? else {
                 bail!("event ID not found; obtain id from failures/stuck/prompts --json");
@@ -468,6 +476,17 @@ fn resolve_roots(cli: &Cli, prior: Option<Roots>) -> Result<Roots> {
                 .or_else(|| prior.as_ref().map(|r| r.pi.clone()))
                 .unwrap_or_else(|| home.join(".pi/agent/sessions")),
         )?,
+        omp: absolute(
+            cli.omp
+                .clone()
+                .or_else(|| {
+                    prior
+                        .as_ref()
+                        .map(|r| r.omp.clone())
+                        .filter(|p| !p.as_os_str().is_empty())
+                })
+                .unwrap_or_else(|| home.join(".omp/agent/sessions")),
+        )?,
         home,
     })
 }
@@ -484,7 +503,8 @@ fn validate_paths(database: &Path, roots: &Roots, cli: &Cli) -> Result<()> {
             "claude" => cli.claude.is_some(),
             "codex" => cli.codex.is_some(),
             "opencode" => cli.opencode.is_some(),
-            _ => cli.pi.is_some(),
+            "pi" => cli.pi.is_some(),
+            _ => cli.omp.is_some(),
         };
         if explicit && !path.exists() {
             bail!(
@@ -635,7 +655,7 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
     }
     if available == 0 {
         bail!(
-            "no readable sources; set --claude/--codex/--opencode/--pi or --home; missing sources are unknown"
+            "no readable sources; set --claude/--codex/--opencode/--pi/--omp or --home; missing sources are unknown"
         );
     }
     let gaps: u64 = conn.query_row("SELECT COUNT(*) FROM multi_sources WHERE (?1 IS NULL OR agent=?1) AND (status!='available' OR unknown_records>0 OR json_array_length(warnings)>0)",

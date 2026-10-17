@@ -158,9 +158,12 @@ pub fn read_if_changed(
             batch
                 .warnings
                 .push(format!("missing usage counters at message row {id}"));
-        } else if ["input", "output", "reasoning", "total"]
+        } else if ["input", "output", "reasoning"]
             .iter()
             .any(|key| data["tokens"][*key].as_u64().is_none())
+            || data["tokens"]
+                .get("total")
+                .is_some_and(|v| v.as_u64().is_none())
             || data["tokens"]["cache"]["read"].as_u64().is_none()
             || data["tokens"]["cache"]["write"].as_u64().is_none()
         {
@@ -472,7 +475,7 @@ mod tests {
         conn.execute("INSERT INTO message VALUES(?1,?2,?3)", params!["m-copy-no-parent", "fork-no-parent", r#"{"role":"assistant","time":{"created":1500},"modelID":"m1","cost":0,"tokens":{"total":0,"input":10,"output":4,"reasoning":1,"cache":{"read":2,"write":3}}}"#]).unwrap();
         conn.execute("INSERT INTO message VALUES(?1,?2,?3)", params!["m", "s", r#"{"role":"assistant","time":{"created":1500},"modelID":"m1","cost":0,"tokens":{"total":0,"input":10,"output":4,"reasoning":1,"cache":{"read":2,"write":3}}}"#]).unwrap();
         conn.execute("INSERT INTO message VALUES(?1,?2,?3)", params!["m-copy", "fork", r#"{"role":"assistant","time":{"created":1500},"modelID":"m1","cost":0,"tokens":{"total":0,"input":10,"output":4,"reasoning":1,"cache":{"read":2,"write":3}}}"#]).unwrap();
-        conn.execute("INSERT INTO message VALUES(?1,?2,?3)", params!["m-new", "fork", r#"{"role":"assistant","time":{"created":2500},"modelID":"m1","cost":0.01,"tokens":{"total":3,"input":2,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}"#]).unwrap();
+        conn.execute("INSERT INTO message VALUES(?1,?2,?3)", params!["m-new", "fork", r#"{"role":"assistant","time":{"created":2500},"modelID":"m1","cost":0.01,"tokens":{"input":2,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}"#]).unwrap();
         conn.execute(
             "INSERT INTO message VALUES(?1,?2,?3)",
             params!["u", "s", r#"{"role":"user"}"#],
@@ -494,6 +497,7 @@ mod tests {
         let before = std::fs::metadata(&db).unwrap().len();
         let (_, batch) = read_if_changed(&db, |_| Ok(false)).unwrap().unwrap();
         assert_eq!(batch.sessions.len(), 3);
+        assert!(batch.warnings.iter().all(|w| !w.contains("token counters")));
         assert_eq!(batch.events.iter().filter(|e| e.kind == "usage").count(), 2);
         let usage = batch.events.iter().find(|e| e.kind == "usage").unwrap();
         assert_eq!(usage.tokens.input, Some(15));
@@ -518,6 +522,20 @@ mod tests {
                 .any(|e| e.kind == "edit" && e.target.as_deref() == Some("a.rs"))
         );
         assert_eq!(std::fs::metadata(&db).unwrap().len(), before);
+        let conn = Connection::open(&db).unwrap();
+        conn.execute(
+            "UPDATE message SET data=json_set(data,'$.tokens.total','invalid') WHERE id='m-new'",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let (_, malformed) = read_if_changed(&db, |_| Ok(false)).unwrap().unwrap();
+        assert!(
+            malformed
+                .warnings
+                .iter()
+                .any(|w| w.contains("token counters at message row m-new"))
+        );
         std::fs::remove_file(db).unwrap();
     }
 }
