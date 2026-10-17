@@ -241,20 +241,7 @@ fn add_instruction(
     scope: &str,
     project: Option<&str>,
 ) -> Result<()> {
-    let content = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
-    };
-    rows.push(json!({
-        "agent": agent, "id": "AGENTS.md", "kind": "claude_md", "scope": scope,
-        "project": project, "path": path.display().to_string(),
-        "static_tokens": claude::approx_tokens(&content), "measurement": "estimated",
-        "startup_tokens": null, "on_demand_tokens": null, "load_mode": null,
-        "startup_measurement": "unavailable",
-        "usage_status": "unavailable", "uses": null, "loaded": null,
-    }));
-    Ok(())
+    add_content_file(rows, agent, path, "AGENTS.md", "claude_md", scope, project)
 }
 
 fn add_skills(
@@ -319,15 +306,34 @@ fn add_skill_file(
     scope: &str,
     project: Option<&str>,
 ) -> Result<()> {
-    let path = dir.join("SKILL.md");
-    let content = match fs::read_to_string(&path) {
+    let id = dir.file_name().and_then(|s| s.to_str()).unwrap_or("skill");
+    add_content_file(
+        rows,
+        agent,
+        &dir.join("SKILL.md"),
+        id,
+        "skill",
+        scope,
+        project,
+    )
+}
+
+fn add_content_file(
+    rows: &mut Vec<Value>,
+    agent: &str,
+    path: &Path,
+    id: &str,
+    kind: &str,
+    scope: &str,
+    project: Option<&str>,
+) -> Result<()> {
+    let content = match fs::read_to_string(path) {
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
     };
-    let id = dir.file_name().and_then(|s| s.to_str()).unwrap_or("skill");
     rows.push(json!({
-        "agent": agent, "id": id, "kind": "skill", "scope": scope,
+        "agent": agent, "id": id, "kind": kind, "scope": scope,
         "project": project, "path": path.display().to_string(),
         "static_tokens": claude::approx_tokens(&content), "measurement": "estimated",
         "startup_tokens": null, "on_demand_tokens": null, "load_mode": null,
@@ -356,29 +362,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalogs_skill_estimate_without_retaining_file_body_or_claiming_unused() {
+    fn catalogs_file_estimates_without_retaining_bodies_or_claiming_unused() {
         let temp = std::env::temp_dir().join(format!("cclens-config-multi-{}", std::process::id()));
         let skill = temp.join(".codex/skills/review/SKILL.md");
+        let instruction = temp.join(".codex/AGENTS.md");
+        let skill_body = "synthetic private skill body";
+        let instruction_body = "synthetic private instructions";
         fs::create_dir_all(skill.parent().unwrap()).unwrap();
-        fs::write(&skill, "synthetic private skill body").unwrap();
+        fs::write(&skill, skill_body).unwrap();
+        fs::write(&instruction, instruction_body).unwrap();
 
         let rows = read("codex", &temp, &[]).unwrap();
-        let row = rows.iter().find(|r| r["id"] == "review").unwrap();
-        assert_eq!(row["kind"], "skill");
-        assert_eq!(
-            row["static_tokens"],
-            claude::approx_tokens("synthetic private skill body")
-        );
-        assert_eq!(row["measurement"], "estimated");
-        assert_eq!(row["usage_status"], "unavailable");
-        assert!(row["uses"].is_null());
-        assert!(row["loaded"].is_null());
-        assert!(
-            !rows
-                .iter()
-                .any(|r| r.to_string().contains("synthetic private skill body"))
-        );
+        assert_eq!(rows.len(), 2);
+        for (id, kind, path, body) in [
+            ("AGENTS.md", "claude_md", &instruction, instruction_body),
+            ("review", "skill", &skill, skill_body),
+        ] {
+            let row = rows.iter().find(|r| r["id"] == id).unwrap();
+            assert_eq!(row["kind"], kind);
+            assert_eq!(row["scope"], "global");
+            assert!(row["project"].is_null());
+            assert_eq!(row["path"], path.display().to_string());
+            assert_eq!(row["static_tokens"], claude::approx_tokens(body));
+            assert_eq!(row["measurement"], "estimated");
+            assert!(row["startup_tokens"].is_null());
+            assert!(row["on_demand_tokens"].is_null());
+            assert!(row["load_mode"].is_null());
+            assert_eq!(row["startup_measurement"], "unavailable");
+            assert_eq!(row["usage_status"], "unavailable");
+            assert!(row["uses"].is_null());
+            assert!(row["loaded"].is_null());
+            assert!(!rows.iter().any(|r| r.to_string().contains(body)));
+        }
 
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn reports_read_errors_with_the_configuration_path() {
+        let temp =
+            std::env::temp_dir().join(format!("cclens-config-errors-{}", std::process::id()));
+        let instruction = temp.join(".codex/AGENTS.md");
+        fs::create_dir_all(&instruction).unwrap();
+
+        let error = read("codex", &temp, &[]).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains(&instruction.display().to_string())
+        );
         fs::remove_dir_all(temp).unwrap();
     }
 }
