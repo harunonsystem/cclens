@@ -401,11 +401,114 @@ fn omp_usage_is_separate_idempotent_and_keeps_reasoning_and_credentials_safe() {
         assert_eq!(row["output_tokens"], 7);
         assert_eq!(row["reasoning_tokens"], 4);
         assert_eq!(data["sources"][0]["unknown_records"], 0);
+        let evidence = cli(
+            &root,
+            &[
+                "get",
+                "usage:usage:1767225600000",
+                "--agent",
+                "omp",
+                "--frozen",
+                "--json",
+            ],
+        );
+        assert!(
+            evidence.status.success(),
+            "{}",
+            String::from_utf8_lossy(&evidence.stderr)
+        );
     }
     assert_eq!(before, fs::read(sessions.join("session.jsonl")).unwrap());
     assert!(
         !String::from_utf8_lossy(&fs::read(root.join("analysis.db")).unwrap())
             .contains("synthetic-secret")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn old_roots_refresh_invalidates_pi_cache_and_discovers_omp_separately() {
+    let root = std::env::temp_dir().join(format!(
+        "cclens-old-roots-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let session = [
+        json!({"type":"session","id":"synthetic-session","cwd":"/tmp/example","version":3}),
+        json!({"type":"message","id":"a","timestamp":"2026-01-01T00:00:00Z","message":{"role":"assistant","model":"synthetic-model","usage":{"input":10,"cacheRead":3,"cacheWrite":2,"output":7,"reasoningTokens":4,"totalTokens":22}}}),
+    ].iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+    let pi = root.join(".pi/agent/sessions");
+    fs::create_dir_all(&pi).unwrap();
+    fs::write(pi.join("session.jsonl"), &session).unwrap();
+    let initial = cli(
+        &root,
+        &[
+            "analyze",
+            "--home",
+            &root.to_string_lossy(),
+            "--agent",
+            "pi",
+            "--json",
+        ],
+    );
+    assert!(initial.status.success());
+    {
+        let conn = rusqlite::Connection::open(root.join("analysis.db")).unwrap();
+        conn.execute_batch(
+            "UPDATE multi_sources SET version='multi-4', unknown_records=1;
+            UPDATE multi_observations SET payload=json_set(payload,'$.tokens.reasoning',NULL);
+            UPDATE meta SET value=json_remove(value,'$.omp') WHERE key='multi_roots';",
+        )
+        .unwrap();
+    }
+    let omp = root.join(".omp/agent");
+    fs::create_dir_all(omp.join("sessions")).unwrap();
+    fs::write(omp.join("sessions/session.jsonl"), session).unwrap();
+    fs::create_dir_all(omp.join("skills/review")).unwrap();
+    fs::write(
+        omp.join("skills/review/SKILL.md"),
+        "---\ndescription: synthetic\n---\nPrivate synthetic skill body",
+    )
+    .unwrap();
+    let refreshed = cli(&root, &["analyze", "--json"]);
+    assert!(
+        refreshed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&refreshed.stderr)
+    );
+    let refreshed: Value = serde_json::from_slice(&refreshed.stdout).unwrap();
+    assert_eq!(refreshed["parsed_sources"], 2);
+    let report = cli(&root, &["usage", "--frozen", "--json"]);
+    assert!(report.status.success());
+    let report: Value = serde_json::from_slice(&report.stdout).unwrap();
+    let rows = report["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for agent in ["pi", "omp"] {
+        let row = rows.iter().find(|row| row["agent"] == agent).unwrap();
+        assert_eq!(row["usage_events"], 1);
+        assert_eq!(row["input_tokens"], 15);
+        assert_eq!(row["reasoning_tokens"], 4);
+    }
+    let inventory = cli(
+        &root,
+        &["inventory", "--agent", "omp", "--frozen", "--json"],
+    );
+    assert!(inventory.status.success());
+    let inventory: Value = serde_json::from_slice(&inventory.stdout).unwrap();
+    assert!(
+        inventory["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["agent"] == "omp" && row["id"] == "review")
+    );
+    assert!(
+        !inventory
+            .to_string()
+            .contains("Private synthetic skill body")
     );
     fs::remove_dir_all(root).unwrap();
 }

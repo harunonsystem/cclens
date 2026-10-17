@@ -621,6 +621,11 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
                 let mut text = String::new();
                 file.read_to_string(&mut text)
                     .with_context(|| format!("read {agent} source {}", path.display()))?;
+                let fp = adapter::multi::fingerprint(&text);
+                if db::unchanged(conn, agent, &source, &fp)? {
+                    skipped += 1;
+                    continue;
+                }
                 let b = match agent {
                     "claude" => adapter::claude::parse(&text, &source),
                     "codex" => adapter::codex::parse(&text, &source),
@@ -631,20 +636,6 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
             if db::unchanged(conn, agent, &source, &fingerprint)? {
                 skipped += 1;
                 continue;
-            }
-            // Preserve deployed Pi/OMP short-ID disambiguation before the
-            // merged normalizer adds kind/target identity and resolves paths.
-            if matches!(agent, "pi" | "omp") {
-                for event in &mut batch.events {
-                    event.id = format!(
-                        "{}:{}",
-                        event.id,
-                        event
-                            .timestamp_ms
-                            .map(|time| time.to_string())
-                            .unwrap_or_else(|| event.session_id.clone())
-                    );
-                }
             }
             adapter::multi::normalize(&mut batch);
             if !batch.warnings.is_empty() {

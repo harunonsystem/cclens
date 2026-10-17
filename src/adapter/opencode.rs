@@ -522,6 +522,20 @@ mod tests {
                 .any(|e| e.kind == "edit" && e.target.as_deref() == Some("a.rs"))
         );
         assert_eq!(std::fs::metadata(&db).unwrap().len(), before);
+        let conn = Connection::open(&db).unwrap();
+        conn.execute(
+            "UPDATE message SET data=json_set(data,'$.tokens.total','invalid') WHERE id='m-new'",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let (_, malformed) = read_if_changed(&db, |_| Ok(false)).unwrap().unwrap();
+        assert!(
+            malformed
+                .warnings
+                .iter()
+                .any(|w| w.contains("token counters at message row m-new"))
+        );
         std::fs::remove_file(db).unwrap();
     }
 }

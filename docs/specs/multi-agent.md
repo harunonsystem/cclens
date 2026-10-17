@@ -6,7 +6,8 @@ edits agent configuration. Repository setup is separate from analysis.
 `claude` forwards to the original read-only reports.
 
 Agent adapters normalize inputs into sessions and evidence-bearing events,
-including runtime-specific identity rules. The CLI does not interpret event IDs.
+including runtime-specific identity rules applied once by each adapter. The CLI
+does not interpret event IDs.
 Common aggregation and catalog/trace joins are pure transforms in
 `multi::analysis`; they reuse upstream failure, prompt, and edit-burst classifiers.
 The same private SQLite file holds both `multi_*` and original Claude tables.
@@ -58,6 +59,11 @@ command bodies, configuration bodies or authentication material. The upstream
 Claude tables retain their existing bounded error excerpts. Evidence
 references use one-based JSONL lines or SQLite table and row IDs.
 
+Codex writes harness-injected context (`AGENTS.md` instructions, environment
+context, plugin recommendations, abort and subagent notices) as user-role items
+with no marker; the adapter drops them by prefix so they never count as user
+prompts (see `is_injected` in `src/adapter/codex.rs`).
+
 User classifications, error categories and edit bursts are heuristics. An edit
 burst identifies repeated edits, not a proven unsuccessful repair. Catalogued
 configuration is not evidence that the agent loaded it. Inventory separates
@@ -71,7 +77,7 @@ is never called unused. Global entries are shadowed by a same-agent, same-kind,
 same-ID project entry for traces from that project, so one trace does not count
 against both entries.
 
-Acceptance checks cover four-agent synthetic input through CLI output,
+Acceptance checks cover five-agent synthetic input through CLI output,
 incremental retry, cumulative resets, copied forks, missing fields, malformed
 tail recovery, source safety, upstream Claude tests, and real local input.
 Commands must terminate with closed stdin and work outside the checkout.

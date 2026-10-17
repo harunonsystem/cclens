@@ -38,6 +38,7 @@ cclens-multi get '<example.id>' --agent codex --frozen --json
 | Codex | `~/.codex/sessions/` | `--codex PATH`、`CODEX_HOME` |
 | OpenCode | `~/.local/share/opencode/opencode.db` | `--opencode PATH`、`XDG_DATA_HOME` |
 | pi | `~/.pi/agent/sessions/` | `--pi PATH` |
+| OMP | `~/.omp/agent/sessions/` | `--omp PATH` |
 
 `--home PATH` は別の home 配下を使う。明示指定した入力ルートは DB に記録され、次の増分実行で再利用する。入力フラグはディレクトリに加えて単一 JSONL も受け付ける。OpenCode は SQLite とその WAL を読み取り専用のトランザクションで読む。
 
@@ -53,7 +54,7 @@ DB は `${XDG_STATE_HOME:-~/.local/state}/cclens-multi/analysis.db`。`--db /abs
 
 変更確認はJSONLを固定サイズのバッファでハッシュし、OpenCodeは読み取りトランザクション内で生の行をハッシュする。サイズ・更新時刻だけでスキップせず、同サイズの書き換えやWAL内の更新も検出する。usage・failures・promptsはSQLiteから逐次集計する。`--limit` は表示件数だけを制限し、総数や合計の計算対象は減らさない。編集バーストの検出は引き続き対象の編集履歴をメモリに保持する。
 
-未対応のイベント・壊れた行・欠損カウンタは `sources --json` と stderr に出る。保存形式の全バージョン互換は保証せず、解析可能な根拠の範囲を出力する。pi の補助ログなど session header のない JSONL も取得範囲の警告になる。
+未対応のイベント・壊れた行・欠損カウンタは `sources --json` と stderr に出る。保存形式の全バージョン互換は保証せず、解析可能な根拠の範囲を出力する。pi / OMP の既知の observation-pack 補助ledgerは除外件数をsource警告に残し、モデル利用量へ加算しない。未認識の補助ログは引き続き取得範囲の欠損として報告する。
 
 ## 本家の Claude 分析
 
@@ -80,5 +81,3 @@ cargo build --release --locked
 管理先は [harunonsystem/cclens-multi](https://github.com/harunonsystem/cclens-multi) の private repo。既定ブランチは `multi-agent`。この PC の checkout は `~/sandbox/cclens-multi`、`origin` は管理先、`upstream` は本家を指す。
 
 本家の CI・release workflow は履歴とともに保持しているが、この private repo の GitHub Actions は無効にしている。導入と検証には上記の Cargo コマンドを使う。crates.io・Homebrew への公開は行わない。
-
-OMP は `--agent omp` で個別集計し、既定は `~/.omp/agent/sessions`（`--omp PATH` で変更）を読みます。SoL-Pi の既知の補助ledgerは除外件数をsource警告に残し、モデル利用量へ加算しません。
