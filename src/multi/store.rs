@@ -4,7 +4,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
-pub const VERSION: &str = "multi-5";
+pub const VERSION: &str = "multi-6";
 
 pub fn initialize(conn: &Connection) -> Result<()> {
     conn.busy_timeout(std::time::Duration::from_secs(10))?;

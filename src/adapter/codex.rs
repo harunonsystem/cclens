@@ -158,6 +158,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
                 } else if item["type"] == "CommandExecution"
                     && (item["status"] == "failed"
                         || item["exit_code"].as_i64().is_some_and(|c| c != 0))
+                    && !is_search_no_match(item)
                 {
                     let key = format!("command:{item_id}");
                     if !seen.insert(key.clone()) {
@@ -237,6 +238,60 @@ pub fn parse(text: &str, path: &str) -> Batch {
         }
     }
     batch
+}
+
+fn is_search_no_match(item: &Value) -> bool {
+    if item["exit_code"].as_i64() != Some(1)
+        || item["aggregated_output"].as_str().map(str::trim) != Some("")
+    {
+        return false;
+    }
+    let Some(args) = item["command"].as_array() else {
+        return false;
+    };
+    let Some(executable) = args.first().and_then(Value::as_str) else {
+        return false;
+    };
+    let name = std::path::Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str());
+    if name == Some("rg") {
+        return args.iter().all(Value::is_string);
+    }
+    let [_, flag, script] = args.as_slice() else {
+        return false;
+    };
+    if !matches!(name, Some("sh" | "bash" | "zsh")) || !matches!(flag.as_str(), Some("-c" | "-lc"))
+    {
+        return false;
+    }
+    let Some(script) = script
+        .as_str()
+        .and_then(|s| s.strip_prefix("rg"))
+        .filter(|s| s.starts_with(' ') || s.starts_with('\t'))
+    else {
+        return false;
+    };
+    // Reject shell composition and expansion rather than hiding another command's failure.
+    let mut quote = None;
+    for c in script.chars() {
+        if quote == Some('\'') {
+            if c == '\'' {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' if quote.is_none() => quote = Some(c),
+            '"' => quote = if quote.is_some() { None } else { Some(c) },
+            '$' | '`' | '\\' => return false,
+            '#' | '|' | '&' | ';' | '<' | '>' | '(' | ')' | '\n' | '\r' if quote.is_none() => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    quote.is_none()
 }
 
 /// Codex writes harness-injected context as `role: user` items without any

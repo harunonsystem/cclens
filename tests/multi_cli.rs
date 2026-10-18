@@ -17,6 +17,189 @@ fn cli(root: &std::path::Path, args: &[&str]) -> Output {
 }
 
 #[test]
+fn codex_search_no_matches_are_not_reported_as_failures() {
+    let root = std::env::temp_dir().join(format!(
+        "cclens-search-no-match-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(root.join("codex")).unwrap();
+    let commands = [
+        // An empty search result is not an execution error.
+        (
+            json!(["/bin/zsh", "-lc", "rg -n 'alpha|beta' /work/file"]),
+            json!(1),
+            json!(""),
+            false,
+        ),
+        (
+            json!(["/bin/bash", "-c", "rg -n \"alpha|beta\" /work/file"]),
+            json!(1),
+            json!(" \n"),
+            false,
+        ),
+        (
+            json!(["rg", "alpha", "/work/file"]),
+            json!(1),
+            json!(""),
+            false,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg -n 'alpha#beta' /work/file"]),
+            json!(1),
+            json!(""),
+            false,
+        ),
+        // Genuine errors, compound commands, and unknown records stay visible.
+        (
+            json!(["/bin/sh", "-c", "rg -q alpha /work/file # '\nfalse # '"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /missing"]),
+            json!(2),
+            json!("No such file or directory"),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file"]),
+            json!(1),
+            json!("permission denied"),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file && false"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file; false"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file | false"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg \"$(false)\" /work/file"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file 2>/dev/null"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file"]),
+            Value::Null,
+            json!(""),
+            true,
+        ),
+        (
+            json!(["/bin/zsh", "-lc", "rg alpha /work/file"]),
+            json!(1),
+            Value::Null,
+            true,
+        ),
+        (Value::Null, json!(1), json!(""), true),
+        (
+            json!(["/bin/zsh", "-lc", "false"]),
+            json!(1),
+            json!(""),
+            true,
+        ),
+    ];
+    let mut records =
+        vec![json!({"type":"session_meta","payload":{"id":"search-session","cwd":"/work"}})];
+    for (i, (command, code, output, _)) in commands.iter().enumerate() {
+        records.push(
+            json!({"type":"event_msg","timestamp":"2026-01-01T00:00:01Z",
+            "payload":{"type":"item_completed","item":{"type":"CommandExecution",
+                "id":format!("command-{i}"),"status":"failed","command":command,
+                "exit_code":code,"aggregated_output":output}}}),
+        );
+    }
+    fs::write(
+        root.join("codex/session.jsonl"),
+        records
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let home = root.to_string_lossy();
+    let codex_root = root.join("codex");
+    let args = [
+        "failures",
+        "--home",
+        &home,
+        "--agent",
+        "codex",
+        "--codex",
+        codex_root.to_str().unwrap(),
+        "--min-count",
+        "1",
+        "--json",
+    ];
+    let output = cli(&root, &args);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let failure_count: u64 = report["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["count"].as_u64().unwrap())
+        .sum();
+    assert_eq!(
+        failure_count,
+        commands.iter().filter(|(_, _, _, failed)| *failed).count() as u64
+    );
+    for row in report["rows"].as_array().unwrap() {
+        for example in row["examples"].as_array().unwrap() {
+            let id = example["id"].as_str().unwrap();
+            let index: usize = id.rsplit('-').next().unwrap().parse().unwrap();
+            assert!(
+                commands[index].3,
+                "no-match search appeared in failures: {id}"
+            );
+        }
+    }
+    // An older cached extraction must be rebuilt even when its input is unchanged.
+    let conn = rusqlite::Connection::open(root.join("analysis.db")).unwrap();
+    conn.execute("DELETE FROM multi_observations WHERE agent='codex'", [])
+        .unwrap();
+    conn.execute(
+        "UPDATE multi_sources SET version='multi-5' WHERE agent='codex'",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let retry = cli(&root, &args);
+    assert!(retry.status.success());
+    let retried: Value = serde_json::from_slice(&retry.stdout).unwrap();
+    assert_eq!(retried["rows"], report["rows"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn inventory_preserves_startup_and_body_costs_without_guessing_other_runtimes() {
     let root = std::env::temp_dir().join(format!(
         "cclens-inventory-cost-{}-{}",
