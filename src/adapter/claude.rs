@@ -183,6 +183,9 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     | "result"
                     | "summary"
                     | "custom-title"
+                    | "api-request"
+                    | "api-request-blob"
+                    | "api-request-shape"
             )
         ) {
             batch.unknown_records += 1;
@@ -217,6 +220,9 @@ mod tests {
                 "{\"type\":\"result\",\"agentId\":\"a\",\"key\":\"k\",\"result\":{}}\n",
                 "{\"type\":\"summary\",\"leafUuid\":\"l\",\"summary\":\"synthetic\"}\n",
                 "{\"type\":\"custom-title\",\"sessionId\":\"s\",\"customTitle\":\"synthetic\"}\n",
+                "{\"type\":\"api-request\",\"sessionId\":\"s\",\"id\":\"q\",\"params\":{}}\n",
+                "{\"type\":\"api-request-blob\",\"sessionId\":\"s\",\"hash\":\"h\",\"message\":{}}\n",
+                "{\"type\":\"api-request-shape\",\"sessionId\":\"s\",\"shapeHash\":\"h\",\"shape\":{}}\n",
                 "{\"type\":\"mystery\",\"sessionId\":\"s\"}\n"
             ),
             "synthetic.jsonl",
