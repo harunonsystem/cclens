@@ -2,11 +2,11 @@
 
 Claude Code・Codex・OpenCode・pi・OMP のローカルログを共通 SQLite に集計する Rust CLI。コマンド名は `cclens-multi` で、既存の `cclens` と共存する。
 
-本家 [lambdalisue/cclens](https://github.com/lambdalisue/cclens) の Git 履歴と [MIT LICENSE](LICENSE) を保持したローカル拡張。基点は `3df5f76eb14a53c4cb03d975fd4dbd4eb2f7cc70`。本家の説明は [README.md](README.md)、拡張の契約は [multi-agent spec](docs/specs/multi-agent.md) にある。
+本家 [lambdalisue/cclens](https://github.com/lambdalisue/cclens) の公開 fork で、Git 履歴と [MIT LICENSE](LICENSE) を保持する。本家の説明は [README.md](README.md)、拡張の契約は [multi-agent spec](docs/specs/multi-agent.md) にある。
 
 ## 導入・別 PC への移動
 
-1. GitHub の private repo にアクセスできる認証を用意し、`git clone https://github.com/harunonsystem/cclens-multi.git` を実行する。実ログと集計 DB のコピーは不要。
+1. `git clone https://github.com/harunonsystem/cclens.git` を実行する。実ログと集計 DB のコピーは不要。
 2. clone 先で Rust stable と Cargo を用意し、`cargo install --path . --locked` を実行する。この PC では Rust 1.99.0 で検証した。
 3. `~/.cargo/bin` を PATH に入れ、ソース外で `cclens-multi agent-context` を実行する。`CARGO_INSTALL_ROOT` を指定した場合はその `bin/` を PATH に入れる。
 4. `cclens-multi analyze --dry-run --json` で入力先を確認し、`cclens-multi doctor --json` を実行する。
@@ -80,6 +80,6 @@ cargo build --release --locked
 
 テストの入力は合成データだけ。実ログ、集計 DB、認証情報、実設定の本文を Git に追加しない。入力は読み取り専用で、`multi_*` テーブルにはカウンタ・分類・パス・イベント ID・根拠位置を保存し、本文を保存しない。互換側の本家テーブルは既存仕様に従って短いエラー抜粋も保持する。ローカル DB とレポートのパス・モデル名も私的な情報として扱う。
 
-管理先は [harunonsystem/cclens-multi](https://github.com/harunonsystem/cclens-multi) の private repo。既定ブランチは `main`。この PC の checkout は `~/ghq/github.com/harunonsystem/cclens-multi`、`origin` は管理先を指す。
+管理先は [harunonsystem/cclens](https://github.com/harunonsystem/cclens)。既定ブランチは `main`。公開 repo のため、commit 前に README.md の手順で privacy hook（betterleaks・lefthook）を入れる。規則は [session-data-privacy](.claude/rules/session-data-privacy.md)、CI の `privacy` job が同じ検査を必須で行う。
 
-本家の CI・release workflow は履歴とともに保持しているが、この private repo の GitHub Actions は無効にしている。導入と検証には上記の Cargo コマンドを使う。crates.io・Homebrew への公開は行わない。
+本家の release workflow は履歴とともに保持しているが使わない。crates.io・Homebrew への公開は行わない。
