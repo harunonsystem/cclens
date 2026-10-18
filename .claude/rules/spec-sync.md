@@ -27,6 +27,7 @@ prematurely). A change to code maps to the spec that owns its concern:
 | SQLite schema, incremental ingest, idempotency (the store layer) | `docs/specs/storage.md` |
 | CLI commands, flags, time bucketing, output formats | `docs/specs/cli.md` |
 | Layer boundaries, two-stage flow, resilience to upstream format changes (cross-cutting) | `docs/specs/architecture.md` |
+| Multi-agent adapters (`src/adapter/{claude,codex,opencode,pi,multi,config_multi}.rs`), the `multi_*` store and the `cclens-multi` CLI (`src/multi/`) | `docs/specs/multi-agent.md` |
 
 If a change spans concerns, update each owning spec. If you can't find an owning
 spec, list `docs/specs/` and pick the closest topic before assuming none fits.
