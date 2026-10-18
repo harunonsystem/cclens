@@ -298,9 +298,6 @@ pub fn run() -> Result<()> {
             })
         }
         Command::Get { id } => {
-            if filter.agent.is_none() {
-                bail!("get requires --agent claude|codex|opencode|pi|omp");
-            }
             let Some((a, p, e)) = db::event_by_id(&snapshot, filter.agent.unwrap(), &id)? else {
                 bail!("event ID not found; obtain id from failures/stuck/prompts --json");
             };
@@ -633,10 +630,6 @@ fn analyze(store: &Store, roots: &Roots, selected: Option<Agent>) -> Result<Valu
                 };
                 (fp, b)
             };
-            if db::unchanged(conn, agent, &source, &fingerprint)? {
-                skipped += 1;
-                continue;
-            }
             adapter::multi::normalize(&mut batch);
             if !batch.warnings.is_empty() {
                 eprintln!(
