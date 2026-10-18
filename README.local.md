@@ -80,6 +80,6 @@ cargo build --release --locked
 
 テストの入力は合成データだけ。実ログ、集計 DB、認証情報、実設定の本文を Git に追加しない。入力は読み取り専用で、`multi_*` テーブルにはカウンタ・分類・パス・イベント ID・根拠位置を保存し、本文を保存しない。互換側の本家テーブルは既存仕様に従って短いエラー抜粋も保持する。ローカル DB とレポートのパス・モデル名も私的な情報として扱う。
 
-管理先は [harunonsystem/cclens-multi](https://github.com/harunonsystem/cclens-multi) の private repo。既定ブランチは `multi-agent`。この PC の checkout は `~/ghq/github.com/harunonsystem/cclens-multi`、`origin` は管理先を指す。
+管理先は [harunonsystem/cclens-multi](https://github.com/harunonsystem/cclens-multi) の private repo。既定ブランチは `main`。この PC の checkout は `~/ghq/github.com/harunonsystem/cclens-multi`、`origin` は管理先を指す。
 
 本家の CI・release workflow は履歴とともに保持しているが、この private repo の GitHub Actions は無効にしている。導入と検証には上記の Cargo コマンドを使う。crates.io・Homebrew への公開は行わない。
