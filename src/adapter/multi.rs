@@ -107,9 +107,31 @@ pub fn text(value: &Value) -> String {
         .unwrap_or_default()
 }
 
-pub fn prompt(e: &mut Event, content: &str) {
+pub fn prompt(mut e: Event, content: &str) -> Option<Event> {
+    // These runtimes also write machine context as user-role text.
+    const CONTEXT_PREFIXES: &[&str] = &[
+        "# AGENTS.md instructions for",
+        "<permissions instructions>",
+        "<environment_context>",
+        "<recommended_plugins>",
+        "<turn_aborted>",
+        "<subagent_notification>",
+        "<task-notification>",
+        "<external_codex_apps_open_page>",
+        "[Request interrupted by user",
+        "This session is being continued from a previous conversation that ran out of context.",
+    ];
+    let head = content.trim_start();
+    if head.is_empty()
+        || CONTEXT_PREFIXES
+            .iter()
+            .any(|prefix| head.starts_with(prefix))
+    {
+        return None;
+    }
     e.category = Some(crate::core::prompt::classify_prompt(content).label().into());
     e.measurement = "estimated".into();
+    Some(e)
 }
 
 pub fn failure(e: &mut Event, content: &str) {
