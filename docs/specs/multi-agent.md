@@ -32,6 +32,9 @@ classifying events. Neither check relies on file size or modification time, so
 same-size rewrites and committed WAL changes remain visible.
 Malformed lines, missing counters, inaccessible sources and unrecognized
 records are reported as coverage gaps. A missing source is not zero usage.
+Claude bookkeeping records that carry no usage, intent or tool outcome (tool
+progress, subagent start/result, summaries, titles) are recognized and skipped,
+not counted as unknown (see the known-type list in `src/adapter/claude.rs`).
 
 Codex response usage takes precedence from its first timestamp onward; an older
 cumulative prefix is retained with estimated identity. OpenCode forks remap IDs

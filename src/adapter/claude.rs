@@ -178,6 +178,11 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     | "artifact-autoreact-ledger"
                     | "continued-in"
                     | "fork-context-ref"
+                    | "progress"
+                    | "started"
+                    | "result"
+                    | "summary"
+                    | "custom-title"
             )
         ) {
             batch.unknown_records += 1;
@@ -201,5 +206,22 @@ mod tests {
         );
         assert_eq!(b.events.len(), 1);
         assert_eq!(b.events[0].tokens.total, Some(13));
+    }
+
+    #[test]
+    fn bookkeeping_records_are_not_unknown() {
+        let b = parse(
+            concat!(
+                "{\"type\":\"progress\",\"uuid\":\"p\",\"sessionId\":\"s\",\"data\":{}}\n",
+                "{\"type\":\"started\",\"agentId\":\"a\",\"key\":\"k\"}\n",
+                "{\"type\":\"result\",\"agentId\":\"a\",\"key\":\"k\",\"result\":{}}\n",
+                "{\"type\":\"summary\",\"leafUuid\":\"l\",\"summary\":\"synthetic\"}\n",
+                "{\"type\":\"custom-title\",\"sessionId\":\"s\",\"customTitle\":\"synthetic\"}\n",
+                "{\"type\":\"mystery\",\"sessionId\":\"s\"}\n"
+            ),
+            "synthetic.jsonl",
+        );
+        assert_eq!(b.unknown_records, 1);
+        assert!(b.events.is_empty());
     }
 }
