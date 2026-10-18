@@ -64,6 +64,8 @@ context, plugin recommendations, abort and subagent notices) as user-role items
 with no marker; the adapter drops them by prefix so they never count as user
 prompts (see `is_injected` in `src/adapter/codex.rs`).
 
+A Codex command lifecycle record with explicit exit code 1 and empty output is not a failure when its command is a standalone `rg` search: ripgrep uses this status for no matches. Recognition is conservative (direct argv, or a simple `sh` / `bash` / `zsh` `-c` / `-lc` invocation). Shell comments, composition, redirection, expansion, missing fields, nonempty output and other exit codes retain the existing failure behavior. Like other successful commands, no-match searches do not emit failure events. Refresh invalidates cached extraction from before this change; `--frozen` does not reinterpret an older store.
+
 User classifications, error categories and edit bursts are heuristics. An edit
 burst identifies repeated edits, not a proven unsuccessful repair. Catalogued
 configuration is not evidence that the agent loaded it. Inventory separates
