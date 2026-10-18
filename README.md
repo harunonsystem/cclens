@@ -48,6 +48,15 @@ just build           # release binary at target/release/cclens
 Plain Cargo also works (`cargo build --release`) if you have a recent stable
 Rust; the flake just pins it. CI runs `nix develop -c just check` / `just test`.
 
+Before committing, install the privacy hooks — they block home-directory paths,
+personal email addresses, secrets, and commits not authored with the GitHub
+noreply address (CI runs the same checks):
+
+```sh
+mise install         # betterleaks + lefthook, pinned in mise.toml
+lefthook install
+```
+
 Publishing a GitHub Release for a `vX.Y.Z` tag builds binaries for Linux, macOS,
 and Windows (x86_64 and arm64 each), attaches them to that release with
 `.sha256` files, points the

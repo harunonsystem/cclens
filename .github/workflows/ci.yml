@@ -43,6 +43,46 @@ jobs:
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - run: nix develop -c just test
 
+  # The enforcing copy of lefthook.yml — hooks can be skipped, this cannot. Leaks
+  # are scanned over the whole history (it takes well under a second); identity
+  # only over the new commits, because upstream history carries its authors'
+  # own addresses. betterleaks is not in nixpkgs, so the release binary is
+  # fetched and checked against its published digest. See
+  # .claude/rules/session-data-privacy.md.
+  privacy:
+    name: privacy (betterleaks + commit identity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install betterleaks
+        env:
+          VERSION: 2.0.0-rc.2
+          SHA256: 8f622e1fc93d06c7ecd2250e8d5d1cc323f379b1b0995364f973da476331b918
+        run: |
+          curl -sSLf -o "$RUNNER_TEMP/betterleaks.tar.gz" \
+            "https://github.com/betterleaks/betterleaks/releases/download/v$VERSION/betterleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/betterleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/betterleaks.tar.gz" -C "$RUNNER_TEMP" betterleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Scan history for leaks
+        run: >-
+          betterleaks git --log-opts=HEAD --include=commit-messages
+          --config .betterleaks.toml --redact --no-banner
+      - name: Check commit identity
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # shortcut: the pushed branch is already a remote ref after checkout, so a
+          # first push of a new branch checks nothing here; pre-push covers it.
+          if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            scripts/check-identity.sh "$HEAD" --not --remotes
+          else
+            scripts/check-identity.sh "$BASE..$HEAD"
+          fi
+
   # One job per system the flake advertises, because the cache only helps the
   # systems it actually holds: a build pushed from Linux does nothing for a mac
   # user, who would compile from source — the exact thing the substituter in

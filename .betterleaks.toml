@@ -1,0 +1,40 @@
+# Privacy gate for lefthook (pre-commit / commit-msg / pre-push) and CI.
+# Written for betterleaks 2; bump the version pinned in mise.toml and
+# .github/workflows/ci.yml together. See .claude/rules/session-data-privacy.md.
+#
+# Rules stay generic on purpose: listing a real name or domain here would
+# publish the very association this file guards.
+
+minVersion = "2.0.0-rc.2"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "personal-home-path"
+description = "A real home directory path; fixtures use the placeholders listed in the filter."
+# The user name is the secret: the default global filter drops whole paths
+# such as `/home/x/y`, so a match on the full path would be discarded.
+regex = '''(?:/Users/|/home/|[A-Za-z]:\\{1,2}Users\\{1,2})([A-Za-z0-9._-]+)'''
+valueGroup = 1
+keywords = ["/users/", "/home/", "\\users\\"]
+filter = '''
+matchesAny(finding.secret, [
+  `(?i)^(?:user|me|you|example|runner|linuxbrew|metadata|\.[A-Za-z0-9_-]+)$`
+])
+'''
+
+[[rules]]
+id = "personal-email"
+description = "An email address outside the reserved example and noreply addresses."
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
+keywords = ["@"]
+filter = '''
+matchesAny(finding.secret, [
+  `(?i)@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|org|net)|invalid|test|localhost)$`,
+  `(?i)@users\.noreply\.github\.com$`,
+  `(?i)^no-?reply@`,
+  `^git@`,
+  `^lambdalisue@gmail\.com$`
+])
+'''

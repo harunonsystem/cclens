@@ -1,0 +1,23 @@
+# Local privacy gate; CI's privacy job is the enforcing copy. Requires
+# betterleaks 2 and lefthook (see mise.toml), then `lefthook install`.
+# See .claude/rules/session-data-privacy.md.
+
+pre-commit:
+  commands:
+    identity:
+      run: scripts/check-identity.sh
+    leaks:
+      run: betterleaks git --staged --config .betterleaks.toml --redact --no-banner
+
+commit-msg:
+  commands:
+    leaks:
+      run: betterleaks stdin --config .betterleaks.toml --redact --no-banner < {1}
+
+# A script, not a command: lefthook skips pre-push commands when the diff
+# against @{push} is empty, which would let an empty or author-only commit by.
+pre-push:
+  scripts:
+    "privacy.sh":
+      runner: bash
+      use_stdin: true

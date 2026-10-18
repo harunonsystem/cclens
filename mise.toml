@@ -1,0 +1,5 @@
+# Privacy hook tools (lefthook.yml). Keep betterleaks in step with the version
+# pinned in .github/workflows/ci.yml and the syntax of .betterleaks.toml.
+[tools]
+betterleaks = "2.0.0-rc.2"
+lefthook = "2.1.9"
