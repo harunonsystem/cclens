@@ -127,9 +127,8 @@ pub fn parse(text: &str, path: &str) -> Batch {
                 let content_text = common::text(content);
                 let model = common::string(&message["model"]).or_else(|| current_model.clone());
                 if role == "user" {
-                    let mut event = common::event(entry_id, &session_id, "prompt", ts, path, line);
-                    common::prompt(&mut event, &content_text);
-                    batch.events.push(event);
+                    let event = common::event(entry_id, &session_id, "prompt", ts, path, line);
+                    batch.events.extend(common::prompt(event, &content_text));
                     continue;
                 }
                 if role == "assistant" {

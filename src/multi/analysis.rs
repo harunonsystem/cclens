@@ -129,7 +129,7 @@ pub fn stuck(events: &Rows, gap: u32, min: u32) -> Value {
         json!({"agent":a,"session_id":s,"project":if ep.project.is_empty(){None}else{Some(&ep.project)},"path":ep.path,"edits":ep.edits,
             "start_epoch":ep.start_epoch,"end_epoch":ep.end_epoch,"measurement":"estimated","examples":examples})
     }).collect();
-    json!({"rows":rows,"unknown_timestamp_edits":events.iter().filter(|(_,_,e)|e.timestamp_ms.is_none()).count(),"gap_seconds":gap,"min_edits":min})
+    json!({"rows":rows,"signal":"edit_density","proves_failed_repair":false,"unknown_timestamp_edits":events.iter().filter(|(_,_,e)|e.timestamp_ms.is_none()).count(),"gap_seconds":gap,"min_edits":min})
 }
 pub fn prompts(events: impl IntoIterator<Item = Result<Row>>) -> Result<Value> {
     let mut groups: BTreeMap<PromptKey, (usize, Vec<Value>)> = BTreeMap::new();
