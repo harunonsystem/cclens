@@ -14,6 +14,32 @@ struct Call {
     arguments: Value,
 }
 
+fn failure_text<'a>(message: &'a Value, result_text: &'a str, call: Option<&Call>) -> &'a str {
+    let details = &message["details"];
+    if details["codeMode"].as_bool() == Some(true)
+        && let Some(script_error) = details["scriptError"].as_str()
+    {
+        return script_error;
+    }
+
+    let is_codemode = details["codeMode"].as_bool() == Some(true)
+        || message["toolName"].as_str() == Some("codemode")
+        || call.is_some_and(|call| call.name == "codemode");
+    if !is_codemode
+        || !result_text.starts_with("Script failed\n")
+        || !result_text.contains("\nOutput:\n")
+    {
+        return result_text;
+    }
+
+    let Some((_, script_error)) = result_text.rsplit_once("\nScript error:\n") else {
+        return result_text;
+    };
+    script_error
+        .split_once("\n\nTool calls made before the failure (they are not undone):")
+        .map_or(script_error, |(error, _)| error)
+}
+
 /// Parse a pi session file into the shared event model.
 pub fn parse(text: &str, path: &str) -> Batch {
     let mut batch = Batch::default();
@@ -200,7 +226,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
                             line,
                         );
                         event.tool = call.map(|call| call.name.clone());
-                        common::failure(&mut event, &result_text);
+                        common::failure(&mut event, failure_text(message, &result_text, call));
                         batch.events.push(event);
                     }
                     let Some(call) = call else {

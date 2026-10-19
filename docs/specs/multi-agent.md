@@ -77,6 +77,15 @@ previously extracted facts without reclassifying them.
 
 A Codex command lifecycle record with explicit exit code 1 and empty output is not a failure when its command is a standalone `rg` search: ripgrep uses this status for no matches. Recognition is conservative (direct argv, or a simple `sh` / `bash` / `zsh` `-c` / `-lc` invocation). Shell comments, composition, redirection, expansion, missing fields, nonempty output and other exit codes retain the existing failure behavior. Like other successful commands, no-match searches do not emit failure events. Refresh invalidates cached extraction from before this change; `--frozen` does not reinterpret an older store.
 
+Pi and OMP codemode results can include successful output beside a script error.
+Only the error determines its failure category: structured `details.scriptError`
+with `details.codeMode` takes precedence. The known `Script failed` text envelope
+uses its final `Script error` section, excluding the tool-call summary. This
+format knowledge stays in the Pi adapter; ordinary tools and unrecognized
+envelopes retain full-result classification. Failure counts and evidence remain
+unchanged. Refresh re-extracts previously cached sources; `--frozen` keeps their
+stored classifications.
+
 User classifications, error categories and edit bursts are heuristics. An edit
 burst identifies repeated edits, not a proven unsuccessful repair. The stuck
 report explicitly emits `signal: "edit_density"` and
