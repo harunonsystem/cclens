@@ -256,7 +256,7 @@ fn pi_codemode_failures_use_script_error_without_misclassifying_output() {
                 json!({"codeMode":true,"scriptError":error,"calls":[{"id":"trace-1","name":"read","args":{},"status":"error","durationMs":1,"error":error}]}),
             ),
             "legacy" => (
-                json!([{"type":"text","text":format!("Script failed\nWall time 0.0 seconds\nOutput:\nconst timeoutSeconds = 120;\n\nScript error:\n{error}\n\nTool calls made before the failure (they are not undone): read (ok), read (error)")}]),
+                json!([{"type":"text","text":format!("Script failed\nWall time 0.0 seconds\nOutput:\nconst timeoutSeconds = 120;\n\nScript error:\nExample timeout in documentation\nScript error:\n{error}\n\nTool calls made before the failure (they are not undone): read (ok), read (error)")}]),
                 json!({"calls":[{"id":"trace-1","name":"read","args":{},"status":"error","durationMs":1,"error":error}]}),
             ),
             "ordinary" => (
@@ -264,7 +264,7 @@ fn pi_codemode_failures_use_script_error_without_misclassifying_output() {
                 json!({}),
             ),
             _ => (
-                json!([{"type":"text","text":"Script failed\nOutput:\nconst timeoutSeconds = 120;\nScript error:\nError: unknown envelope"}]),
+                json!([{"type":"text","text":"Script failed\nOutput:\nconst timeoutSeconds = 120;\nError summary:\nError: unknown envelope"}]),
                 json!({"codeMode":true}),
             ),
         };

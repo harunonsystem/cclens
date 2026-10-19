@@ -86,7 +86,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
             }
             Some("event_msg") if p["type"] == "token_count" => {
                 if explicit_start.is_some_and(|(first_line, first_ts)| {
-                    line >= first_line || !ts.zip(first_ts).is_some_and(|(old, new)| old < new)
+                    line >= first_line || ts.zip(first_ts).is_none_or(|(old, new)| old >= new)
                 }) {
                     continue;
                 }
