@@ -200,6 +200,136 @@ fn codex_search_no_matches_are_not_reported_as_failures() {
 }
 
 #[test]
+fn pi_codemode_failures_use_script_error_without_misclassifying_output() {
+    let root = std::env::temp_dir().join(format!(
+        "cclens-pi-script-error-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(root.join("pi")).unwrap();
+    let mut records = vec![json!({"type":"session","id":"synthetic-session","cwd":"/tmp/demo"})];
+    let cases = [
+        (
+            "codemode",
+            "Error: Offset 210 is beyond end of file (174 lines total)",
+            "modern",
+            false,
+        ),
+        (
+            "codemode",
+            "Error: Offset 210 is beyond end of file (174 lines total)",
+            "legacy",
+            true,
+        ),
+        (
+            "codemode",
+            "Script execution timed out after 120 seconds",
+            "modern",
+            true,
+        ),
+        ("read", "", "ordinary", true),
+        (
+            "codemode",
+            "Error: Unexpected script result",
+            "unknown",
+            true,
+        ),
+    ];
+    for (index, (tool, error, shape, has_call)) in cases.iter().enumerate() {
+        let call_id = format!("call-{index}");
+        let timestamp = |offset| format!("2026-01-01T00:00:{:02}Z", index * 2 + offset);
+        if *has_call {
+            records.push(json!({
+                "type":"message","id":format!("assistant-{index}"),"timestamp":timestamp(1),
+                "message":{"role":"assistant","content":[{"type":"toolCall","id":call_id,"name":tool,"arguments":{}}]}
+            }));
+        }
+        let (content, details) = match *shape {
+            "modern" => (
+                json!([
+                    {"type":"text","text":format!("Script error: {error}")},
+                    {"type":"text","text":"const timeoutSeconds = 120;"}
+                ]),
+                json!({"codeMode":true,"scriptError":error,"calls":[{"id":"trace-1","name":"read","args":{},"status":"error","durationMs":1,"error":error}]}),
+            ),
+            "legacy" => (
+                json!([{"type":"text","text":format!("Script failed\nWall time 0.0 seconds\nOutput:\nconst timeoutSeconds = 120;\n\nScript error:\n{error}\n\nTool calls made before the failure (they are not undone): read (ok), read (error)")}]),
+                json!({"calls":[{"id":"trace-1","name":"read","args":{},"status":"error","durationMs":1,"error":error}]}),
+            ),
+            "ordinary" => (
+                json!([{"type":"text","text":"Script error: timeoutSeconds is an argument\nordinary tool error"}]),
+                json!({}),
+            ),
+            _ => (
+                json!([{"type":"text","text":"Script failed\nOutput:\nconst timeoutSeconds = 120;\nScript error:\nError: unknown envelope"}]),
+                json!({"codeMode":true}),
+            ),
+        };
+        records.push(json!({
+            "type":"message","id":format!("result-{index}"),"timestamp":timestamp(2),
+            "message":{"role":"toolResult","toolCallId":call_id,"isError":true,"content":content,"details":details}
+        }));
+    }
+    fs::write(
+        root.join("pi/session.jsonl"),
+        records
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let home = root.to_string_lossy();
+    let output = cli(
+        &root,
+        &[
+            "failures",
+            "--home",
+            &home,
+            "--agent",
+            "pi",
+            "--pi",
+            root.join("pi").to_str().unwrap(),
+            "--min-count",
+            "1",
+            "--json",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut rows: Vec<_> = report["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["tool"].as_str().map(str::to_owned),
+                row["category"].as_str().unwrap().to_owned(),
+                row["count"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![
+            (None, "other".into(), 1),
+            (Some("codemode".into()), "other".into(), 1),
+            (Some("codemode".into()), "timeout".into(), 2),
+            (Some("read".into()), "timeout".into(), 1),
+        ]
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn inventory_preserves_startup_and_body_costs_without_guessing_other_runtimes() {
     let root = std::env::temp_dir().join(format!(
         "cclens-inventory-cost-{}-{}",
