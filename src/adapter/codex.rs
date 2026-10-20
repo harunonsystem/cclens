@@ -86,7 +86,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
             }
             Some("event_msg") if p["type"] == "token_count" => {
                 if explicit_start.is_some_and(|(first_line, first_ts)| {
-                    line >= first_line || !ts.zip(first_ts).is_some_and(|(old, new)| old < new)
+                    line >= first_line || ts.zip(first_ts).is_none_or(|(old, new)| old >= new)
                 }) {
                     continue;
                 }
@@ -180,7 +180,7 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     && v["metadata"]["client_authored"] != false
                 {
                     let content = common::text(&p["content"]);
-                    if content.is_empty() || is_injected(&content) {
+                    if content.is_empty() {
                         continue;
                     }
                     let key = common::string(&p["id"])
@@ -191,9 +191,8 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     if !seen.insert(key.clone()) {
                         continue;
                     }
-                    let mut e = common::event(key, &id, "prompt", ts, path, line);
-                    common::prompt(&mut e, &content);
-                    batch.events.push(e);
+                    let e = common::event(key, &id, "prompt", ts, path, line);
+                    batch.events.extend(common::prompt(e, &content));
                 } else if matches!(kind, "function_call" | "custom_tool_call") {
                     if let Some(call) = common::string(&p["call_id"]) {
                         let name = common::string(&p["name"]).unwrap_or_else(|| "unknown".into());
@@ -292,21 +291,6 @@ fn is_search_no_match(item: &Value) -> bool {
         }
     }
     quote.is_none()
-}
-
-/// Codex writes harness-injected context as `role: user` items without any
-/// marker, so the prefix is the only tell. These carry no user intent.
-fn is_injected(content: &str) -> bool {
-    const PREFIXES: &[&str] = &[
-        "# AGENTS.md instructions for",
-        "<environment_context>",
-        "<recommended_plugins>",
-        "<turn_aborted>",
-        "<subagent_notification>",
-        "<external_codex_apps_open_page>",
-    ];
-    let head = content.trim_start();
-    PREFIXES.iter().any(|p| head.starts_with(p))
 }
 
 fn tokens(v: &Value) -> Tokens {

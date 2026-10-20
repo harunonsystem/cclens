@@ -140,10 +140,8 @@ pub fn parse(text: &str, path: &str) -> Batch {
                     && !content.trim_start().starts_with("<command-")
                     && seen.insert(format!("prompt:{key}"))
                 {
-                    let mut e =
-                        common::event(format!("prompt:{key}"), &id, "prompt", ts, path, line);
-                    common::prompt(&mut e, &content);
-                    batch.events.push(e);
+                    let e = common::event(format!("prompt:{key}"), &id, "prompt", ts, path, line);
+                    batch.events.extend(common::prompt(e, &content));
                 }
             }
         } else if v["type"] == "system" && v["subtype"] == "compact_boundary" {

@@ -297,8 +297,7 @@ pub fn read_if_changed(
     for (_, (session_id, part_id, content, timestamp)) in prompt_parts {
         let mut e = part_event(&part_id, &session_id, "prompt", path);
         e.timestamp_ms = timestamp;
-        multi::prompt(&mut e, &content);
-        batch.events.push(e);
+        batch.events.extend(multi::prompt(e, &content));
     }
     tx.commit().context("finish OpenCode read snapshot")?;
     Ok(Some((fingerprint, batch)))
