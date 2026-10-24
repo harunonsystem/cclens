@@ -102,27 +102,5 @@ jobs:
     secrets:
       cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-  # The same matrix the release publishes, so a target that stops compiling
-  # fails here rather than at the moment a release is cut. Archives are uploaded
-  # as run artifacts, which also makes a PR build downloadable for a quick check.
-  targets:
-    name: cross-platform build
-    uses: ./.github/workflows/build.yml
-    with:
-      tag: dev
-
-  # Whether the crate is still publishable, checked here for the same reason the
-  # matrix above is: manifest metadata that crates.io rejects would otherwise
-  # surface only once a release is published, and a crates.io version cannot be
-  # replaced. The dry run needs no credentials — it packages the crate, builds
-  # what it packaged, and stops before the upload. The version it packages is the
-  # committed placeholder, which is all this check needs — the release workflow
-  # supplies the real one.
-  package:
-    name: cargo publish --dry-run
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo publish --dry-run --locked
+  # The upstream release-matrix and crates.io dry-run jobs are dropped: this
+  # fork publishes no binaries or crate (README.local.md).

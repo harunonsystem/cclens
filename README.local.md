@@ -82,4 +82,4 @@ cargo build --release --locked
 
 管理先は [harunonsystem/cclens](https://github.com/harunonsystem/cclens)。既定ブランチは `main`。公開 repo のため、commit 前に README.md の手順で privacy hook（betterleaks・lefthook）を入れる。規則は [session-data-privacy](.claude/rules/session-data-privacy.md)、CI の `privacy` job が同じ検査を必須で行う。
 
-本家の release workflow は履歴とともに保持しているが使わない。crates.io・Homebrew への公開は行わない。
+crates.io・Homebrew への公開は行わないため、本家の release workflow と配布用の CI job（クロスビルド、`cargo publish --dry-run`）は削除した。
