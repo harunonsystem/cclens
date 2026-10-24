@@ -32,11 +32,11 @@ pub fn read(agent: &str, home: &Path, projects: &[String]) -> Result<Vec<Value>>
             let mut surfaces = claude::read_skill_surfaces(&root.join("skills"), &scope);
             surfaces.extend(claude::read_rule_surfaces(&root.join("rules"), &scope));
             surfaces.extend(claude::read_agent_surfaces(&root.join("agents"), &scope));
-            if let Some(surface) =
-                claude::read_claude_md_surface(&root.join("CLAUDE.md"), "global", &scope)
-            {
-                surfaces.push(surface);
-            }
+            surfaces.extend(claude::read_claude_md_surfaces(
+                &[(&root.join("CLAUDE.md"), "global")],
+                &scope,
+                Some(home),
+            ));
             rows.extend(surfaces.into_iter().map(|s| surface_row("claude", s)));
             for project in projects {
                 let root = PathBuf::from(project);
@@ -49,7 +49,7 @@ pub fn read(agent: &str, home: &Path, projects: &[String]) -> Result<Vec<Value>>
                     root.join(".claude/agents"),
                 ])?;
                 rows.extend(
-                    claude::read_project_surfaces(&root, project)
+                    claude::read_project_surfaces(&root, project, Some(home))
                         .into_iter()
                         .map(|s| surface_row("claude", s)),
                 );
