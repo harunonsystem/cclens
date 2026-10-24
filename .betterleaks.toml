@@ -14,8 +14,9 @@ useDefault = true
 id = "personal-home-path"
 description = "A real home directory path; fixtures use the placeholders listed in the filter."
 # The user name is the secret: the default global filter drops whole paths
-# such as `/home/x/y`, so a match on the full path would be discarded.
-regex = '''(?:/Users/|/home/|[A-Za-z]:\\{1,2}Users\\{1,2})([A-Za-z0-9._-]+)'''
+# such as `/home/x/y`, so a match on the full path would be discarded. The
+# leading class keeps `/tmp/example/home/x` from counting as a home directory.
+regex = '''(?m)(?:^|[^A-Za-z0-9._/\\-])(?:/Users/|/home/|[A-Za-z]:\\{1,2}Users\\{1,2})([A-Za-z0-9._-]+)'''
 valueGroup = 1
 keywords = ["/users/", "/home/", "\\users\\"]
 filter = '''
@@ -29,12 +30,15 @@ id = "personal-email"
 description = "An email address outside the reserved example and noreply addresses."
 regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
 keywords = ["@"]
+# shortcut: `@import`-style file references (`x@notes.md`) end in a file
+# extension, so those TLDs are skipped; a real address there would pass too.
 filter = '''
 matchesAny(finding.secret, [
   `(?i)@(?:[A-Za-z0-9-]+\.)*(?:example\.(?:com|org|net)|invalid|test|localhost)$`,
   `(?i)@users\.noreply\.github\.com$`,
   `(?i)^no-?reply@`,
   `^git@`,
-  `^lambdalisue@gmail\.com$`
+  `^lambdalisue@gmail\.com$`,
+  `(?i)\.(?:md|mdx|rs|toml|json|jsonl|ya?ml|txt|sh|js|ts|py|lock|html|css)$`
 ])
 '''

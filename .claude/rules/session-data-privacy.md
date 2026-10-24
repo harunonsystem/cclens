@@ -36,14 +36,15 @@ memory. The same checks run locally (`lefthook.yml`) and in CI (`privacy` job in
 `.github/workflows/ci.yml`); CI is the gate hooks cannot skip.
 
 - **Leaks** — `.betterleaks.toml` (betterleaks 2 defaults plus two rules)
-  scans staged changes, commit messages, pushed commits, and in CI the whole
-  history including commit messages. The rules flag a home directory with a real-looking user name
+  scans staged changes, commit messages, pushed commits, and in CI all of the
+  fork's own history including commit messages. The rules flag a home directory with a real-looking user name
   (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) and any email address.
 - **Placeholders that pass** — use only these in fixtures, docs and code:
   home directories `user`, `me`, `you`, `example`, `runner`, `linuxbrew`,
   `metadata`, or a dot-directory (`/home/.claude`); emails at `example.com`,
   `example.org`, `example.net`, `*.invalid`, `*.test`, `localhost`, plus
-  `noreply@` / `no-reply@` addresses and `git@` SSH remotes. Adding a
+  `noreply@` / `no-reply@` addresses, `git@` SSH remotes, and `@import`-style
+  references ending in a file extension (`x@notes.md`). Adding a
   placeholder means editing the rule's `filter` in `.betterleaks.toml` in the
   same change.
 - **Commit identity** — `scripts/check-identity.sh` allows only the GitHub
@@ -51,6 +52,12 @@ memory. The same checks run locally (`lefthook.yml`) and in CI (`privacy` job in
   for merges made in the GitHub UI). Set it per clone with
   `git config user.email`. Commits taken from elsewhere (rebase, cherry-pick)
   keep their old author; pre-push and CI catch them.
+- **Upstream is out of scope.** Commits reachable from
+  `refs/remotes/upstream/main` (lambdalisue/cclens) are already public and keep
+  their authors' addresses, so both checks skip them. CI fetches that ref; for
+  local hooks run
+  `git fetch https://github.com/lambdalisue/cclens main:refs/remotes/upstream/main`
+  after every upstream sync.
 - **Never name what is hidden.** Rules stay generic. Writing a real name,
   employer or domain into `.betterleaks.toml`, a test, or a commit message
   publishes the association the check exists to protect.

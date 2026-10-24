@@ -5,12 +5,16 @@
 set -euo pipefail
 
 zero=0000000000000000000000000000000000000000
+upstream=refs/remotes/upstream/main
 while read -r _ local _ remote; do
   [[ $local == "$zero" ]] && continue # branch deletion
+  range=()
+  # Upstream commits are already public and not ours to fix.
+  git rev-parse -q --verify "$upstream" >/dev/null && range=("^$upstream")
   if [[ $remote == "$zero" ]]; then
-    range=("$local" --not --remotes)
+    range+=("$local" --not --remotes)
   else
-    range=("$remote..$local")
+    range+=("$remote..$local")
   fi
   scripts/check-identity.sh "${range[@]}"
   betterleaks git --log-opts="${range[*]}" --include=commit-messages \

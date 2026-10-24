@@ -44,9 +44,8 @@ jobs:
       - run: nix develop -c just test
 
   # The enforcing copy of lefthook.yml — hooks can be skipped, this cannot. Leaks
-  # are scanned over the whole history (it takes well under a second); identity
-  # only over the new commits, because upstream history carries its authors'
-  # own addresses. betterleaks is not in nixpkgs, so the release binary is
+  # are scanned over all of the fork's own history (well under a second);
+  # identity only over the new commits. betterleaks is not in nixpkgs, so the release binary is
   # fetched and checked against its published digest. See
   # .claude/rules/session-data-privacy.md.
   privacy:
@@ -66,10 +65,14 @@ jobs:
           echo "$SHA256  $RUNNER_TEMP/betterleaks.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/betterleaks.tar.gz" -C "$RUNNER_TEMP" betterleaks
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # Upstream commits are already public and keep their authors' addresses;
+      # both checks skip what this ref reaches.
+      - name: Fetch upstream
+        run: git fetch --no-tags https://github.com/lambdalisue/cclens main:refs/remotes/upstream/main
       - name: Scan history for leaks
         run: >-
-          betterleaks git --log-opts=HEAD --include=commit-messages
-          --config .betterleaks.toml --redact --no-banner
+          betterleaks git --log-opts="HEAD ^refs/remotes/upstream/main"
+          --include=commit-messages --config .betterleaks.toml --redact --no-banner
       - name: Check commit identity
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
