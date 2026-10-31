@@ -1,6 +1,6 @@
 # cclens
 
-> This private repository ships `cclens-multi` for Claude Code, Codex, OpenCode and pi.
+> This public fork ships `cclens-multi` for Claude Code, Codex, OpenCode, pi and OMP.
 > See [README.local.md](README.local.md) for installation and usage.
 > The upstream README is preserved below.
 
